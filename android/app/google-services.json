@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "822927141060",
+    "project_id": "vital-recorder",
+    "storage_bucket": "vital-recorder.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:822927141060:android:e46c6ac1eb781b15ba0191",
+        "android_client_info": {
+          "package_name": "com.example.vital_recorder_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcMsSbRLdZPuSJrXHpC-pBBEUp8BEo2L0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
