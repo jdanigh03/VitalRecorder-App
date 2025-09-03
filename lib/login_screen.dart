@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Para usar Firebase Auth
-import 'register_screen.dart';
+import 'welcome_page.dart'; // Importa la página de bienvenida
+import 'register_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -34,13 +35,21 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passCtrl.text,
       );
 
-      // Si se autentica, navega al HomeScreen
-      // Navega a la pantalla principal (ajusta la navegación según lo que necesites)
-      Navigator.pop(context); // Cerrar el loader
-      // Puedes navegar al home aquí
-      // Navigator.pushReplacementNamed(context, '/home');
+      // Si se autentica, navega a la página de bienvenida
+      Navigator.pop(context); // Cierra el loader
+
+      // Verifica si el usuario se autenticó correctamente antes de redirigir
+      if (userCredential.user != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const WelcomePage()), // Navega a la página de bienvenida
+        );
+      } else {
+        // Si no se autentica, muestra un mensaje
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo iniciar sesión')));
+      }
     } on FirebaseAuthException catch (e) {
-      Navigator.pop(context); // Cerrar el loader
+      Navigator.pop(context); // Cierra el loader
       String msg = 'Error al iniciar sesión';
       if (e.code == 'invalid-email') msg = 'Correo inválido';
       if (e.code == 'user-not-found') msg = 'Usuario no encontrado';
@@ -48,29 +57,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (e.code == 'user-disabled') msg = 'Usuario deshabilitado';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (_) {
-      Navigator.pop(context); // Cerrar el loader
+      Navigator.pop(context); // Cierra el loader
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ocurrió un problema inesperado')),
-      );
-    }
-  }
-
-  Future<void> _resetPassword() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresa tu correo para enviarte el enlace')),
-      );
-      return;
-    }
-    try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Te enviamos un enlace para restablecer')),
-      );
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo enviar el correo')),
       );
     }
   }
@@ -98,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    const SizedBox(height: 40.0),
+                    const SizedBox(height: 80.0),
 
                     const Text(
                       'Iniciar Sesión',
@@ -188,22 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8.0),
 
-                    // Recuperación de contraseña
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: _resetPassword,
-                        child: const Text(
-                          '¿Olvidaste tu contraseña?',
-                          style: TextStyle(
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10.0),
-
                     // BOTÓN INICIAR SESIÓN
                     ElevatedButton(
                       onPressed: _signIn,
@@ -219,15 +192,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontSize: 18.0, color: Colors.white),
                       ),
                     ),
-                    const SizedBox(height: 20.0),
+                    const SizedBox(height: 20.0), 
 
-                    // SEPARADOR PARA INICIO DE SESIÓN SOCIAL
+                   /* // SEPARADOR PARA INICIO DE SESIÓN SOCIAL
                     const Text(
                       'O conéctate con:',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
-                    const SizedBox(height: 20.0),
+                    const SizedBox(height: 20.0), 
 
                     // BOTONES DE GOOGLE Y FACEBOOK
                     Row(
@@ -247,7 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                       ],
-                    ),
+                    ),*/
                   ],
                 ),
               ),

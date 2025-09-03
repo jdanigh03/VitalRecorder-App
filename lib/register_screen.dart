@@ -288,7 +288,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
+/*
                     const Text(
                       'O Regístrate Con',
                       textAlign: TextAlign.center,
@@ -312,7 +312,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           },
                         ),
                       ],
-                    ),
+                    ),*/
                     const SizedBox(height: 40),
                   ],
                 ),
