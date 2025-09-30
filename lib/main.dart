@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'firebase_options.dart';  // generado por flutterfire configure
+import 'screens/firebase_options.dart';  // generado por flutterfire configure
 import 'splash_screen.dart';    // tu pantalla de splash (animación / logo)
 
 Future<void> main() async {
