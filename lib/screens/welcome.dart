@@ -2,11 +2,12 @@
 // ARCHIVO: lib/screens/welcome.dart
 // ========================================
 import 'package:flutter/material.dart';
+import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder.dart';
 import 'agregar_recordatorio.dart';
 import 'detalle_recordatorio.dart';
 import 'historial.dart';
-import 'notificaciones.dart';
+import 'asignar_cuidador.dart';
 import 'ajustes.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -67,7 +68,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       case 1:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+          MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
         ).then((_) => setState(() => _selectedIndex = 0));
         break;
       case 2:
@@ -99,7 +100,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           children: [
             Icon(Icons.check_circle, color: Colors.white),
             SizedBox(width: 12),
-            Text('¡Recordatorio completado!'),
+            Expanded(
+              child: Text('¡Recordatorio completado!'),
+            ),
           ],
         ),
         backgroundColor: Colors.green,
@@ -147,25 +150,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Bienvenido',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Bienvenido',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-                const Text(
-                  'USUARIO',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  const Text(
+                    'USUARIO',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -310,23 +316,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.schedule,
-                              color: Color(0xFF1E3A5F),
-                              size: 24,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Recordatorios de Hoy',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.schedule,
                                 color: Color(0xFF1E3A5F),
+                                size: 24,
                               ),
-                            ),
-                          ],
+                              SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Recordatorios de Hoy',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E3A5F),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         TextButton.icon(
                           onPressed: () {
@@ -406,9 +417,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               label: 'Inicio',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.notifications_outlined),
-              activeIcon: Icon(Icons.notifications),
-              label: 'Notificaciones',
+              icon: Icon(Icons.people_outline),
+              activeIcon: Icon(Icons.people),
+              label: 'Cuidadores',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.history_outlined),
@@ -439,25 +450,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           children: [
             Icon(icon, color: Colors.white, size: 20),
             SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 10,
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -491,6 +505,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[700],
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
@@ -499,6 +514,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 fontSize: 14,
                 color: Colors.grey[600],
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -613,6 +629,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 ? TextDecoration.lineThrough 
                                 : null,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -624,33 +641,45 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 ? TextDecoration.lineThrough 
                                 : null,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 8),
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
                           children: [
-                            Icon(
-                              Icons.access_time, 
-                              size: 14, 
-                              color: isPast ? Colors.red : Colors.grey[500],
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.access_time, 
+                                  size: 14, 
+                                  color: isPast ? Colors.red : Colors.grey[500],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: isPast ? Colors.red : Color(0xFF4A90E2),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: isPast ? Colors.red : Color(0xFF4A90E2),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
-                            const SizedBox(width: 4),
-                            Text(
-                              reminder.frequency,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[500],
-                              ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  reminder.frequency,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -659,6 +688,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
 
                   // Botón de acción
+                  const SizedBox(width: 8),
                   if (!reminder.isCompleted)
                     ElevatedButton(
                       onPressed: () => _marcarComoCompletado(reminder),
@@ -668,10 +698,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         elevation: 2,
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.check, size: 18),
                           SizedBox(width: 4),
@@ -679,7 +710,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             'Confirmar',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                              fontSize: 12,
                             ),
                           ),
                         ],

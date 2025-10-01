@@ -111,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // FONDO GRADIENTE - Actualizado con los colores de la app
+          // FONDO GRADIENTE
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -129,22 +129,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    const SizedBox(height: 80.0),
+                    const SizedBox(height: 40.0),
 
-                    // Icono de la app
-                    Container(
-                      padding: EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.health_and_safety,
-                        size: 64,
-                        color: Colors.white,
+                    // Logo de la app
+                    Center(
+                      child: Image.asset(
+                        'assets/vital_recorder_nobg.png',
+                        height: 120,
+                        width: 120,
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 10),
 
                     const Text(
                       'Iniciar Sesión',
@@ -156,16 +151,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-
-                    const Text(
-                      'Bienvenido de nuevo',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16.0,
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 32.0),
 
                     // OPCIÓN PARA REGISTRARSE
                     Row(
@@ -192,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24.0),
+                    const SizedBox(height: 20.0),
 
                     // E-mail
                     const Align(
@@ -279,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 32.0),
+                    const SizedBox(height: 24.0),
 
                     // BOTÓN INICIAR SESIÓN
                     Container(
@@ -317,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20.0),
+                    const SizedBox(height: 8.0),
 
                     // Olvidaste tu contraseña
                     TextButton(
@@ -368,37 +353,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// WIDGET REUTILIZABLE PARA LOS BOTONES SOCIALES (opcional)
-class _SocialButton extends StatelessWidget {
-  final String imagePath;
-  final VoidCallback onTap;
-
-  const _SocialButton({required this.imagePath, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12.0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              spreadRadius: 2,
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Image.asset(imagePath, height: 40.0),
       ),
     );
   }
