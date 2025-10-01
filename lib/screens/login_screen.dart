@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'welcome.dart';
 import 'register_screen.dart';
+import 'forgot_password.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -73,6 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (e.code == 'user-not-found') msg = 'Usuario no encontrado';
       if (e.code == 'wrong-password') msg = 'Contraseña incorrecta';
       if (e.code == 'user-disabled') msg = 'Usuario deshabilitado';
+      if (e.code == 'invalid-credential') msg = 'Credenciales incorrectas';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -129,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    const SizedBox(height: 40.0),
+                    const SizedBox(height: 80.0),
 
                     // Logo de la app
                     Center(
@@ -139,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 120,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
 
                     const Text(
                       'Iniciar Sesión',
@@ -304,17 +306,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8.0),
 
-                    // Olvidaste tu contraseña
+                    // Olvidaste tu contraseña - AHORA CON NAVEGACIÓN
                     TextButton(
                       onPressed: () {
-                        // Implementar recuperación de contraseña
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Función de recuperación en desarrollo'),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ForgotPasswordScreen(),
                           ),
                         );
                       },
@@ -331,24 +328,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40.0),
                   ],
                 ),
-              ),
-            ),
-          ),
-
-          // BOTÓN DE REGRESO
-          Positioned(
-            top: 40,
-            left: 10,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
               ),
             ),
           ),
