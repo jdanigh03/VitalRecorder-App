@@ -1,222 +1,245 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import '../models/reminder.dart';
 
-class NotificacionesScreen extends StatelessWidget {
+class NotificacionesScreen extends StatefulWidget {
   const NotificacionesScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final notifications = [
-      {
-        'title': 'Amoxicilina 1g',
-        'message': 'Es hora de tomar tu medicamento',
-        'time': '9:00 AM',
-        'isRead': false,
-        'type': 'medication',
-      },
-      {
-        'title': 'Recordatorio próximo',
-        'message': 'Ibuprofeno 400mg en 2 horas',
-        'time': '12:00 PM',
-        'isRead': true,
-        'type': 'reminder',
-      },
-      {
-        'title': 'Caminata',
-        'message': 'No olvides tu caminata de 30 minutos',
-        'time': '6:00 PM',
-        'isRead': false,
-        'type': 'activity',
-      },
-      {
-        'title': 'Medicamento omitido',
-        'message': 'No confirmaste la toma de Vitamina D',
-        'time': 'Ayer',
-        'isRead': true,
-        'type': 'warning',
-      },
-    ];
+  State<NotificacionesScreen> createState() => _NotificacionesScreenState();
+}
 
+class _NotificacionesScreenState extends State<NotificacionesScreen> {
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+  }
+
+  // -----------------------------------------------------------
+  // Inicialización de notificaciones
+  // -----------------------------------------------------------
+  Future<void> _initializeNotifications() async {
+    tz.initializeTimeZones();
+
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
+
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
+  // -----------------------------------------------------------
+  // Mostrar una notificación inmediata (para prueba)
+  // -----------------------------------------------------------
+  Future<void> _mostrarNotificacionInstantanea() async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'vital_recorder_channel',
+      'Recordatorios Vital Recorder',
+      importance: Importance.max,
+      priority: Priority.high,
+      color: Color(0xFF4A90E2),
+    );
+
+    const NotificationDetails generalNotificationDetails =
+        NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.show(
+      0,
+      'Prueba de notificación',
+      'Este es un ejemplo de notificación instantánea',
+      generalNotificationDetails,
+    );
+  }
+
+  // -----------------------------------------------------------
+  // Programar notificación para un recordatorio
+  // -----------------------------------------------------------
+  Future<void> programarNotificacion(Reminder reminder) async {
+    final tz.TZDateTime fechaProgramada =
+        tz.TZDateTime.from(reminder.dateTime, tz.local);
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'vital_recorder_channel',
+      'Recordatorios Vital Recorder',
+      importance: Importance.max,
+      priority: Priority.high,
+      color: Color(0xFF4A90E2),
+      icon: '@mipmap/ic_launcher',
+    );
+
+    const NotificationDetails notificationDetails =
+        NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      reminder.dateTime.millisecondsSinceEpoch ~/ 1000, // ID único
+      reminder.title,
+      reminder.description.isNotEmpty
+          ? reminder.description
+          : 'Tienes un recordatorio pendiente',
+      fechaProgramada,
+      notificationDetails,
+      androidAllowWhileIdle: true,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  // -----------------------------------------------------------
+  // Cancelar todas las notificaciones
+  // -----------------------------------------------------------
+  Future<void> _cancelarTodas() async {
+    await flutterLocalNotificationsPlugin.cancelAll();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Todas las notificaciones han sido canceladas'),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+
+  // -----------------------------------------------------------
+  // Interfaz visual
+  // -----------------------------------------------------------
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E3A5F),
-        title: const Text(
-          'Notificaciones',
-          style: TextStyle(color: Colors.white),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Todas las notificaciones marcadas como leídas'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: Text(
-              'Marcar todo',
-              style: TextStyle(color: Colors.white),
+      body: Stack(
+        children: [
+          // Fondo degradado
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1E3A5F), Color(0xFF2D5082), Color(0xFF4A90E2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
           ),
-        ],
-      ),
-      body: notifications.isEmpty
-          ? Center(
+
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.notifications_off,
-                    size: 80,
-                    color: Colors.grey[400],
+                  // Botón volver
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                  SizedBox(height: 16),
-                  Text(
-                    'No tienes notificaciones',
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'Notificaciones',
                     style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Gestiona las alertas locales de tus recordatorios.',
+                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
+                  const SizedBox(height: 30),
+
+                  _botonAccion(
+                    texto: 'Probar notificación instantánea',
+                    color: Colors.green,
+                    icono: Icons.notifications,
+                    onPressed: _mostrarNotificacionInstantanea,
+                  ),
+                  const SizedBox(height: 16),
+
+                  _botonAccion(
+                    texto: 'Cancelar todas las notificaciones',
+                    color: Colors.redAccent,
+                    icono: Icons.cancel_outlined,
+                    onPressed: _cancelarTodas,
+                  ),
+                  const SizedBox(height: 30),
+
+                  const Divider(color: Colors.white54),
+                  const SizedBox(height: 10),
+
+                  Center(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        final reminder = Reminder(
+                          id: 'test1',
+                          title: 'Tomar agua',
+                          description: 'Hidrátate adecuadamente',
+                          dateTime: DateTime.now().add(const Duration(seconds: 10)),
+                          frequency: 'Una vez',
+                          type: 'Salud',
+                        );
+                        programarNotificacion(reminder);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Notificación programada en 10 segundos'),
+                            backgroundColor: Colors.blueAccent,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.schedule, color: Colors.white),
+                      label: const Text(
+                        'Programar notificación de prueba',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4A90E2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-            )
-          : ListView.builder(
-              padding: EdgeInsets.all(16),
-              itemCount: notifications.length,
-              itemBuilder: (context, index) {
-                final notification = notifications[index];
-                return _buildNotificationCard(
-                  context,
-                  notification['title'] as String,
-                  notification['message'] as String,
-                  notification['time'] as String,
-                  notification['isRead'] as bool,
-                  notification['type'] as String,
-                );
-              },
             ),
-    );
-  }
-
-  Widget _buildNotificationCard(
-    BuildContext context,
-    String title,
-    String message,
-    String time,
-    bool isRead,
-    String type,
-  ) {
-    IconData icon;
-    Color color;
-
-    switch (type) {
-      case 'medication':
-        icon = Icons.medication;
-        color = Colors.blue;
-        break;
-      case 'activity':
-        icon = Icons.directions_run;
-        color = Colors.green;
-        break;
-      case 'warning':
-        icon = Icons.warning;
-        color = Colors.orange;
-        break;
-      default:
-        icon = Icons.notifications;
-        color = Colors.purple;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isRead ? Colors.white : Color(0xFF4A90E2).withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isRead ? Colors.grey.shade200 : Color(0xFF4A90E2).withOpacity(0.3),
-          width: isRead ? 1 : 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(16),
-        leading: Container(
-          padding: EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
+    );
+  }
+
+  Widget _botonAccion({
+    required String texto,
+    required Color color,
+    required IconData icono,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton.icon(
+        icon: Icon(icono, color: Colors.white),
+        label: Text(
+          texto,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
-          child: Icon(icon, color: color, size: 28),
         ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-                  color: Color(0xFF1E3A5F),
-                ),
-              ),
-            ),
-            if (!isRead)
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: Color(0xFF4A90E2),
-                  shape: BoxShape.circle,
-                ),
-              ),
-          ],
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 6),
-            Text(
-              message,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              time,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.close, color: Colors.grey),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Notificación eliminada'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          },
-        ),
+        onPressed: onPressed,
       ),
     );
   }

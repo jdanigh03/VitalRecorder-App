@@ -1,4 +1,9 @@
+// ============================================
+// ARCHIVO: lib/screens/asignar_cuidador.dart
+// ============================================
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AsignarCuidadorScreen extends StatefulWidget {
   const AsignarCuidadorScreen({Key? key}) : super(key: key);
@@ -9,632 +14,256 @@ class AsignarCuidadorScreen extends StatefulWidget {
 
 class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nombreController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _telefonoController = TextEditingController();
-  String _relacionSeleccionada = 'Familiar';
 
-  final List<String> _relaciones = [
-    'Familiar',
-    'Hijo/a',
-    'Padre/Madre',
-    'Esposo/a',
-    'Cuidador profesional',
-    'Amigo/a',
-    'Enfermero/a',
-    'Médico',
-    'Otro',
-  ];
+  final _nombreCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _relacionCtrl = TextEditingController();
+  bool _notificar = false;
 
-  final List<Map<String, String>> _cuidadoresAsignados = [
-    {
-      'nombre': 'María García',
-      'email': 'maria@example.com',
-      'relacion': 'Familiar',
-      'telefono': '+591 12345678',
-    },
-  ];
+  final _auth = FirebaseAuth.instance;
+  final _firestore = FirebaseFirestore.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentSettings();
+  }
 
   @override
   void dispose() {
-    _nombreController.dispose();
-    _emailController.dispose();
-    _telefonoController.dispose();
+    _nombreCtrl.dispose();
+    _emailCtrl.dispose();
+    _relacionCtrl.dispose();
     super.dispose();
   }
 
-  void _agregarCuidador() {
-    if (_formKey.currentState!.validate()) {
+  // ------------------------------------------------------------
+  // Cargar los datos actuales del cuidador (si existen)
+  // ------------------------------------------------------------
+  Future<void> _loadCurrentSettings() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    if (doc.exists) {
+      final data = doc.data()?['settings'] ?? {};
       setState(() {
-        _cuidadoresAsignados.add({
-          'nombre': _nombreController.text,
-          'email': _emailController.text,
-          'relacion': _relacionSeleccionada,
-          'telefono': _telefonoController.text,
-        });
+        _notificar = data['notificar_a_familiar'] ?? false;
+        _emailCtrl.text = data['familiar_email'] ?? '';
+        _nombreCtrl.text = data['familiar_nombre'] ?? '';
+        _relacionCtrl.text = data['familiar_relacion'] ?? '';
+      });
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Guardar datos del cuidador en Firestore
+  // ------------------------------------------------------------
+  Future<void> _saveCuidador() async {
+    if (_formKey.currentState?.validate() != true) return;
+
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Mostrar loader
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+    );
+
+    try {
+      await _firestore.collection('users').doc(user.uid).update({
+        'settings': {
+          'notificar_a_familiar': _notificar,
+          'familiar_email': _emailCtrl.text.trim(),
+          'familiar_nombre': _nombreCtrl.text.trim(),
+          'familiar_relacion': _relacionCtrl.text.trim(),
+        }
       });
 
-      _nombreController.clear();
-      _emailController.clear();
-      _telefonoController.clear();
-      setState(() {
-        _relacionSeleccionada = 'Familiar';
-      });
-
-      Navigator.pop(context);
+      Navigator.pop(context); // Cerrar loader
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 12),
-              Text('Cuidador agregado exitosamente'),
+              SizedBox(width: 10),
+              Text('Datos del cuidador actualizados'),
             ],
           ),
           backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar los datos: $e'),
+          backgroundColor: Colors.redAccent,
         ),
       );
     }
   }
 
-  void _mostrarFormulario() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Color(0xFF4A90E2).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.person_add,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          'Agregar Cuidador',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A5F),
-                          ),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 24),
-                TextFormField(
-                  controller: _nombreController,
-                  decoration: InputDecoration(
-                    labelText: 'Nombre completo',
-                    hintText: 'Ej: Juan Pérez',
-                    prefixIcon: Icon(Icons.person, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el nombre';
-                    }
-                    if (value.length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'Correo electrónico',
-                    hintText: 'ejemplo@correo.com',
-                    prefixIcon: Icon(Icons.email, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el correo';
-                    }
-                    if (!value.contains('@') || !value.contains('.')) {
-                      return 'Ingresa un correo válido';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: _telefonoController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Teléfono',
-                    hintText: '+591 12345678',
-                    prefixIcon: Icon(Icons.phone, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el teléfono';
-                    }
-                    if (value.length < 8) {
-                      return 'Ingresa un número válido';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: _relacionSeleccionada,
-                  decoration: InputDecoration(
-                    labelText: 'Relación con el paciente',
-                    prefixIcon: Icon(Icons.people, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  items: _relaciones.map((relacion) {
-                    return DropdownMenuItem(
-                      value: relacion,
-                      child: Text(relacion),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _relacionSeleccionada = value!;
-                    });
-                  },
-                ),
-                SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton.icon(
-                    onPressed: _agregarCuidador,
-                    icon: Icon(Icons.person_add, color: Colors.white),
-                    label: Text(
-                      'Agregar Cuidador',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF4A90E2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
+  // ------------------------------------------------------------
+  // Interfaz visual
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E3A5F),
-        title: const Text(
-          'Asignar Cuidador',
-          style: TextStyle(color: Colors.white),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF1E3A5F),
-                    Color(0xFF2D5082),
-                    Color(0xFF4A90E2),
-                  ],
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.people,
-                      size: 64,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Gestiona tus Cuidadores',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Los cuidadores recibirán notificaciones de tus recordatorios y podrán ayudarte a gestionar tu salud',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Cuidadores Asignados',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E3A5F),
-                        ),
-                      ),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Color(0xFF4A90E2).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_cuidadoresAsignados.length}',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  if (_cuidadoresAsignados.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.person_add_disabled,
-                              size: 80,
-                              color: Colors.grey[400],
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'No tienes cuidadores asignados',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Agrega un cuidador para que te ayude con tus recordatorios',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    ..._cuidadoresAsignados.map((cuidador) {
-                      return _buildCuidadorCard(cuidador);
-                    }).toList(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _mostrarFormulario,
-        backgroundColor: Color(0xFF4A90E2),
-        icon: Icon(Icons.person_add, color: Colors.white),
-        label: Text(
-          'Agregar Cuidador',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCuidadorCard(Map<String, String> cuidador) {
-    Color getColorByRelacion(String relacion) {
-      switch (relacion) {
-        case 'Familiar':
-        case 'Hijo/a':
-        case 'Padre/Madre':
-        case 'Esposo/a':
-          return Colors.blue;
-        case 'Cuidador profesional':
-        case 'Enfermero/a':
-        case 'Médico':
-          return Colors.teal;
-        case 'Amigo/a':
-          return Colors.purple;
-        default:
-          return Colors.orange;
-      }
-    }
-
-    final color = getColorByRelacion(cuidador['relacion']!);
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
+      body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        color.withOpacity(0.8),
-                        color,
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      cuidador['nombre']![0].toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        cuidador['nombre']!,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E3A5F),
-                        ),
-                      ),
-                      SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(Icons.email, size: 14, color: Colors.grey[600]),
-                          SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              cuidador['email']!,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.phone, size: 14, color: Colors.grey[600]),
-                          SizedBox(width: 6),
-                          Text(
-                            cuidador['telefono']!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton(
-                  icon: Icon(Icons.more_vert, color: Colors.grey[600]),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit, size: 20, color: Colors.blue),
-                          SizedBox(width: 12),
-                          Text('Editar'),
-                        ],
-                      ),
-                      value: 'edit',
-                    ),
-                    PopupMenuItem(
-                      child: Row(
-                        children: [
-                          Icon(Icons.notifications, size: 20, color: Colors.orange),
-                          SizedBox(width: 12),
-                          Text('Notificaciones'),
-                        ],
-                      ),
-                      value: 'notifications',
-                    ),
-                    PopupMenuItem(
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, size: 20, color: Colors.red),
-                          SizedBox(width: 12),
-                          Text('Eliminar'),
-                        ],
-                      ),
-                      value: 'delete',
-                    ),
-                  ],
-                  onSelected: (value) {
-                    if (value == 'delete') {
-                      _mostrarDialogoEliminar(cuidador);
-                    } else if (value == 'edit') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Función de edición en desarrollo'),
-                        ),
-                      );
-                    } else if (value == 'notifications') {
-                      _mostrarDialogoNotificaciones(cuidador);
-                    }
-                  },
-                ),
-              ],
+          // Fondo degradado azul
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1E3A5F), Color(0xFF2D5082), Color(0xFF4A90E2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
           ),
-          Divider(height: 1, thickness: 1),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.label, size: 16, color: color),
-                    SizedBox(width: 8),
-                    Text(
-                      'Relación:',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
+                    // Botón volver
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(height: 10),
+
+                    const Center(
+                      child: Text(
+                        'Asignar Cuidador',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    const Center(
+                      child: Text(
+                        'Agrega un pariente o persona responsable para recibir notificaciones.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+
+                    const Text(
+                      'Nombre completo',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _nombreCtrl,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Campo obligatorio' : null,
+                      decoration: _inputDecoration(
+                        hint: 'Ej. Juan Pérez',
+                        icon: Icons.person_outline,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    const Text(
+                      'Correo electrónico del cuidador',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      validator: (v) {
+                        final email = v?.trim() ?? '';
+                        final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(email);
+                        return ok ? null : 'Correo inválido';
+                      },
+                      decoration: _inputDecoration(
+                        hint: 'correo@ejemplo.com',
+                        icon: Icons.email_outlined,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    const Text(
+                      'Relación con el usuario',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _relacionCtrl,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Campo obligatorio' : null,
+                      decoration: _inputDecoration(
+                        hint: 'Ej. Madre, Hijo, Enfermero...',
+                        icon: Icons.people_outline,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    SwitchListTile(
+                      title: const Text(
+                        'Notificar al cuidador cuando se genere un recordatorio',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                      activeColor: Colors.greenAccent,
+                      value: _notificar,
+                      onChanged: (v) => setState(() => _notificar = v),
+                    ),
+                    const SizedBox(height: 30),
+
+                    // Botón guardar
+                    Container(
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4A90E2).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: _saveCuidador,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                        ),
+                        child: const Text(
+                          'Guardar Información',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
                   ],
                 ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: color.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    cuidador['relacion']!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: color,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -642,159 +271,25 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
     );
   }
 
-  void _mostrarDialogoNotificaciones(Map<String, String> cuidador) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.notifications, color: Color(0xFF4A90E2)),
-            SizedBox(width: 12),
-            Text('Notificaciones'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Configurar notificaciones para ${cuidador['nombre']}',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            SizedBox(height: 16),
-            CheckboxListTile(
-              title: Text('Recordatorios de medicamentos'),
-              value: true,
-              onChanged: (value) {},
-              activeColor: Color(0xFF4A90E2),
-            ),
-            CheckboxListTile(
-              title: Text('Recordatorios omitidos'),
-              value: true,
-              onChanged: (value) {},
-              activeColor: Color(0xFF4A90E2),
-            ),
-            CheckboxListTile(
-              title: Text('Resumen diario'),
-              value: false,
-              onChanged: (value) {},
-              activeColor: Color(0xFF4A90E2),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Preferencias de notificación guardadas'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF4A90E2),
-            ),
-            child: Text('Guardar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: Colors.grey[400]),
+      prefixIcon: Icon(icon, color: const Color(0xFF4A90E2)),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
-    );
-  }
-
-  void _mostrarDialogoEliminar(Map<String, String> cuidador) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange),
-            SizedBox(width: 12),
-            Text('Eliminar Cuidador'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '¿Estás seguro de que deseas eliminar a ${cuidador['nombre']}?',
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 12),
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Esta acción no se puede deshacer',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red[700],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _cuidadoresAsignados.remove(cuidador);
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(Icons.delete, color: Colors.white),
-                      SizedBox(width: 12),
-                      Text('Cuidador eliminado exitosamente'),
-                    ],
-                  ),
-                  backgroundColor: Colors.red,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  action: SnackBarAction(
-                    label: 'Deshacer',
-                    textColor: Colors.white,
-                    onPressed: () {
-                      setState(() {
-                        _cuidadoresAsignados.add(cuidador);
-                      });
-                    },
-                  ),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: Text('Eliminar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
       ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
     );
   }
 }

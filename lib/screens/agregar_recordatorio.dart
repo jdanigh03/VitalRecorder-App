@@ -1,10 +1,20 @@
+// ===============================================
+// ARCHIVO: lib/screens/agregar_recordatorio.dart
+// ===============================================
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:flutter/services.dart';
+
 import '../models/reminder.dart';
 
 class AgregarRecordatorioScreen extends StatefulWidget {
-  final Reminder? reminder;
-
-  const AgregarRecordatorioScreen({Key? key, this.reminder}) : super(key: key);
+  const AgregarRecordatorioScreen({Key? key}) : super(key: key);
 
   @override
   State<AgregarRecordatorioScreen> createState() => _AgregarRecordatorioScreenState();
@@ -12,405 +22,427 @@ class AgregarRecordatorioScreen extends StatefulWidget {
 
 class _AgregarRecordatorioScreenState extends State<AgregarRecordatorioScreen> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _titleController;
-  late TextEditingController _descriptionController;
-  DateTime _selectedDate = DateTime.now();
-  TimeOfDay _selectedTime = TimeOfDay.now();
-  String _selectedFrequency = 'Diario';
-  String _selectedType = 'medication';
-  bool _notificationsEnabled = true;
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  DateTime? _selectedDateTime;
+  String _selectedFrequency = 'Una vez';
+  String _selectedType = 'Medicación';
 
-  final List<String> _frequencies = [
-    'Diario',
-    'Cada 8 horas',
-    'Cada 12 horas',
-    'Semanal',
-    'Mensual',
-    'Personalizado'
-  ];
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.reminder?.title ?? '');
-    _descriptionController = TextEditingController(text: widget.reminder?.description ?? '');
-    if (widget.reminder != null) {
-      _selectedDate = widget.reminder!.dateTime;
-      _selectedTime = TimeOfDay.fromDateTime(widget.reminder!.dateTime);
-      _selectedFrequency = widget.reminder!.frequency;
-      _selectedType = widget.reminder!.type;
-    }
+    _initializeNotifications();
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(0xFF4A90E2),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
+  // ------------------------------------------------------------
+  // Inicialización de notificaciones + solicitud de permisos
+  // ------------------------------------------------------------
+  Future<void> _initializeNotifications() async {
+    tz.initializeTimeZones();
+
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings settings =
+        InitializationSettings(android: androidSettings);
+
+    await _notificationsPlugin.initialize(settings);
+
+    // Pedir permisos necesarios en Android 12/13/14
+    final androidPlugin = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    // Android 13+: permiso runtime para notificaciones
+    await androidPlugin?.requestNotificationsPermission();
+
+    // Android 12+: exact alarms (lleva al usuario al ajuste si hace falta)
+    await androidPlugin?.requestExactAlarmsPermission();
+  }
+
+  // ------------------------------------------------------------
+  // Programar notificación local
+  // ------------------------------------------------------------
+  Future<void> _scheduleNotification(Reminder reminder) async {
+    final tz.TZDateTime fechaProgramada =
+        tz.TZDateTime.from(reminder.dateTime, tz.local);
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'vital_recorder_channel',
+      'Recordatorios Vital Recorder',
+      importance: Importance.max,
+      priority: Priority.high,
+      color: Color(0xFF4A90E2),
+      icon: '@mipmap/ic_launcher',
     );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
+
+    const NotificationDetails notificationDetails =
+        NotificationDetails(android: androidDetails);
+
+    final int notifId = reminder.dateTime.millisecondsSinceEpoch ~/ 1000;
+
+    try {
+      // Intento 1: exacta (recomendado)
+      await _notificationsPlugin.zonedSchedule(
+        notifId,
+        reminder.title,
+        reminder.description.isNotEmpty
+            ? reminder.description
+            : 'Tienes un recordatorio pendiente',
+        fechaProgramada,
+        notificationDetails,
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    } on PlatformException catch (e) {
+      // Si el sistema no permite exactas, se intenta inexacta
+      if (e.code == 'exact_alarms_not_permitted') {
+        await _notificationsPlugin.zonedSchedule(
+          notifId,
+          reminder.title,
+          reminder.description.isNotEmpty
+              ? reminder.description
+              : 'Tienes un recordatorio pendiente',
+          fechaProgramada,
+          notificationDetails,
+          androidAllowWhileIdle: true,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'El sistema no permite alarmas exactas. Se programó como inexacta.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        rethrow;
+      }
     }
   }
 
-  Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(0xFF4A90E2),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _selectedTime) {
-      setState(() {
-        _selectedTime = picked;
-      });
-    }
-  }
-
-  void _saveReminder() {
-    if (_formKey.currentState!.validate()) {
-      // Aquí guardarías el recordatorio en tu base de datos o estado global
+  // ------------------------------------------------------------
+  // Guardar recordatorio en Firestore
+  // ------------------------------------------------------------
+  Future<void> _saveReminder() async {
+    if (_formKey.currentState?.validate() != true || _selectedDateTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.reminder == null 
-            ? 'Recordatorio creado exitosamente' 
-            : 'Recordatorio actualizado exitosamente'),
-          backgroundColor: Colors.green,
+        const SnackBar(
+          content: Text('Completa todos los campos'),
+          backgroundColor: Colors.orange,
         ),
       );
-      Navigator.pop(context);
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes iniciar sesión'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final reminderId =
+        FirebaseFirestore.instance.collection('reminders').doc().id;
+
+    final reminder = Reminder(
+      id: reminderId,
+      title: _titleCtrl.text.trim(),
+      description: _descCtrl.text.trim(),
+      dateTime: _selectedDateTime!,
+      frequency: _selectedFrequency,
+      type: _selectedType,
+    );
+
+    // Mostrar cargando
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
+    );
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('reminders')
+          .doc(reminderId)
+          .set({
+        // Si tu Reminder.toMap() devuelve DateTime, lo forzamos a Timestamp aquí.
+        ...reminder.toMap(),
+        'dateTime': Timestamp.fromDate(reminder.dateTime),
+        'userId': user.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Programar notificación local
+      await _scheduleNotification(reminder);
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Cerrar loader
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recordatorio guardado y notificación programada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context); // Volver a la pantalla anterior
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
+  // ------------------------------------------------------------
+  // Selector de fecha y hora
+  // ------------------------------------------------------------
+  Future<void> _pickDateTime() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 1),
+      helpText: 'Selecciona una fecha',
+    );
+    if (date == null) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 5))),
+    );
+    if (time == null) return;
+
+    setState(() {
+      _selectedDateTime =
+          DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
+  // ------------------------------------------------------------
+  // Construcción visual
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E3A5F),
-        title: Text(
-          widget.reminder == null ? 'Nuevo Recordatorio' : 'Editar Recordatorio',
-          style: const TextStyle(color: Colors.white),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Tipo de recordatorio',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E3A5F),
-                ),
+      body: Stack(
+        children: [
+          // Fondo degradado
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1E3A5F), Color(0xFF2D5082), Color(0xFF4A90E2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildTypeCard(
-                      'medication',
-                      'Medicamento',
-                      Icons.medication,
-                      Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTypeCard(
-                      'activity',
-                      'Actividad',
-                      Icons.directions_run,
-                      Colors.green,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _titleController,
-                decoration: InputDecoration(
-                  labelText: 'Nombre',
-                  hintText: _selectedType == 'medication' 
-                    ? 'Ej: Amoxicilina 500mg' 
-                    : 'Ej: Caminar 30 min',
-                  prefixIcon: Icon(
-                    _selectedType == 'medication' ? Icons.medication : Icons.directions_run,
-                    color: Color(0xFF4A90E2),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Por favor ingresa un nombre';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Descripción',
-                  hintText: 'Notas adicionales...',
-                  prefixIcon: Icon(Icons.notes, color: Color(0xFF4A90E2)),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: _selectDate,
-                      child: Container(
-                        padding: EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.calendar_today, color: Color(0xFF4A90E2)),
-                            SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Fecha',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                Text(
-                                  '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: InkWell(
-                      onTap: _selectTime,
-                      child: Container(
-                        padding: EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.access_time, color: Color(0xFF4A90E2)),
-                            SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Hora',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                Text(
-                                  '${_selectedTime.hour}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedFrequency,
-                decoration: InputDecoration(
-                  labelText: 'Frecuencia',
-                  prefixIcon: Icon(Icons.repeat, color: Color(0xFF4A90E2)),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                items: _frequencies.map((String frequency) {
-                  return DropdownMenuItem<String>(
-                    value: frequency,
-                    child: Text(frequency),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedFrequency = newValue!;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            ),
+          ),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.notifications_active, color: Color(0xFF4A90E2)),
-                        SizedBox(width: 12),
-                        Text(
-                          'Activar notificaciones',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
+                    // Botón de volver
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(height: 10),
+                    const Center(
+                      child: Text(
+                        'Agregar Recordatorio',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+
+                    const Text('Título',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _titleCtrl,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      validator: (v) =>
+                          v == null || v.trim().isEmpty ? 'Campo requerido' : null,
+                      decoration: _inputDecoration(
+                        hint: 'Ej: Tomar medicamento',
+                        icon: Icons.title_outlined,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    const Text('Descripción',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _descCtrl,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      decoration: _inputDecoration(
+                        hint: 'Detalle opcional',
+                        icon: Icons.description_outlined,
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 20),
+
+                    const Text('Fecha y hora',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: _pickDateTime,
+                      child: AbsorbPointer(
+                        child: TextFormField(
+                          style: const TextStyle(color: Color(0xFF1E3A5F)),
+                          decoration: _inputDecoration(
+                            hint: _selectedDateTime == null
+                                ? 'Seleccionar fecha y hora'
+                                : DateFormat('dd/MM/yyyy HH:mm')
+                                    .format(_selectedDateTime!),
+                            icon: Icons.calendar_today_outlined,
                           ),
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    const Text('Frecuencia',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _selectedFrequency,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      decoration: _inputDecoration(
+                        hint: 'Selecciona frecuencia',
+                        icon: Icons.repeat_outlined,
+                      ),
+                      dropdownColor: Colors.white,
+                      items: const [
+                        DropdownMenuItem(value: 'Una vez', child: Text('Una vez')),
+                        DropdownMenuItem(value: 'Diario', child: Text('Diario')),
+                        DropdownMenuItem(value: 'Semanal', child: Text('Semanal')),
                       ],
+                      onChanged: (v) => setState(() => _selectedFrequency = v!),
                     ),
-                    Switch(
-                      value: _notificationsEnabled,
-                      onChanged: (value) {
-                        setState(() {
-                          _notificationsEnabled = value;
-                        });
-                      },
-                      activeColor: Color(0xFF4A90E2),
+                    const SizedBox(height: 20),
+
+                    const Text('Tipo de recordatorio',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _selectedType,
+                      style: const TextStyle(color: Color(0xFF1E3A5F)),
+                      decoration: _inputDecoration(
+                        hint: 'Tipo de recordatorio',
+                        icon: Icons.category_outlined,
+                      ),
+                      dropdownColor: Colors.white,
+                      items: const [
+                        DropdownMenuItem(value: 'Medicación', child: Text('Medicación')),
+                        DropdownMenuItem(value: 'Tarea', child: Text('Tarea')),
+                        DropdownMenuItem(value: 'Cita', child: Text('Cita')),
+                      ],
+                      onChanged: (v) => setState(() => _selectedType = v!),
                     ),
+                    const SizedBox(height: 40),
+
+                    // Botón guardar
+                    Container(
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4A90E2).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: _saveReminder,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                        ),
+                        child: const Text(
+                          'Guardar Recordatorio',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _saveReminder,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color(0xFF4A90E2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    widget.reminder == null ? 'Crear Recordatorio' : 'Guardar Cambios',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTypeCard(String type, String label, IconData icon, Color color) {
-    final isSelected = _selectedType == type;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedType = type;
-        });
-      },
-      child: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.1) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? color : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? color : Colors.grey,
-              size: 32,
-            ),
-            SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? color : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: Colors.grey[400]),
+      prefixIcon: Icon(icon, color: const Color(0xFF4A90E2)),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
     );
   }
 }

@@ -36,4 +36,30 @@ class Reminder {
       type: type ?? this.type,
     );
   }
+
+  // Conversión a Firestore
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'dateTime': dateTime.toIso8601String(),
+      'frequency': frequency,
+      'isCompleted': isCompleted,
+      'type': type,
+    };
+  }
+
+  // Desde Firestore
+  factory Reminder.fromMap(Map<String, dynamic> map) {
+    return Reminder(
+      id: map['id'] ?? '',
+      title: map['title'] ?? '',
+      description: map['description'] ?? '',
+      dateTime: DateTime.parse(map['dateTime']),
+      frequency: map['frequency'] ?? 'Una vez',
+      isCompleted: map['isCompleted'] ?? false,
+      type: map['type'] ?? 'medication',
+    );
+  }
 }

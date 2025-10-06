@@ -1,779 +1,533 @@
-// ========================================
-// ARCHIVO: lib/screens/welcome.dart
-// ========================================
 import 'package:flutter/material.dart';
-import 'package:vital_recorder_app/screens/notificaciones.dart';
-import '../models/reminder.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'agregar_recordatorio.dart';
-import 'detalle_recordatorio.dart';
 import 'historial.dart';
-import 'asignar_cuidador.dart';
+import 'notificaciones.dart';
 import 'ajustes.dart';
+import 'asignar_cuidador.dart';
 
-class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({Key? key}) : super(key: key);
+class WelcomeScreen extends StatelessWidget {
+  const WelcomeScreen({super.key});
 
-  @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
-}
+  Stream<QuerySnapshot> _getUpcomingReminders(String userId) {
+    final now = DateTime.now();
+    // Margen de 1 min hacia atrás para no quedarnos sin resultados por segundos de diferencia
+    final from = now.subtract(const Duration(minutes: 1));
 
-class _WelcomeScreenState extends State<WelcomeScreen> {
-  int _selectedIndex = 0;
-  
-  // Lista de recordatorios de ejemplo
-  final List<Reminder> _reminders = [
-    Reminder(
-      id: '1',
-      title: 'Amoxicilina 1g',
-      description: 'Tomar 1 comprimido',
-      dateTime: DateTime.now().copyWith(hour: 9, minute: 0),
-      frequency: 'Diario',
-      type: 'medication',
-    ),
-    Reminder(
-      id: '2',
-      title: 'Ibuprofeno 400mg',
-      description: 'Tomar con alimentos',
-      dateTime: DateTime.now().copyWith(hour: 14, minute: 0),
-      frequency: 'Cada 8 horas',
-      type: 'medication',
-    ),
-    Reminder(
-      id: '3',
-      title: 'Caminata',
-      description: '30 minutos',
-      dateTime: DateTime.now().copyWith(hour: 18, minute: 0),
-      frequency: 'Diario',
-      type: 'activity',
-    ),
-    Reminder(
-      id: '4',
-      title: 'Vitamina D',
-      description: '1 cápsula',
-      dateTime: DateTime.now().copyWith(hour: 8, minute: 0),
-      frequency: 'Diario',
-      type: 'medication',
-      isCompleted: true,
-    ),
-  ];
-
-  void _onItemTapped(int index) {
-    if (index == _selectedIndex) return;
-    
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    switch (index) {
-      case 1:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
-        break;
-      case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const HistorialScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
-        break;
-      case 3:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AjustesScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
-        break;
-    }
-  }
-
-  void _marcarComoCompletado(Reminder reminder) {
-    setState(() {
-      final index = _reminders.indexWhere((r) => r.id == reminder.id);
-      if (index != -1) {
-        _reminders[index] = reminder.copyWith(isCompleted: true);
-      }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text('¡Recordatorio completado!'),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    return FirebaseFirestore.instance
+        .collection('reminders')
+        .where('userId', isEqualTo: userId)
+        .orderBy('dateTime', descending: false)
+        .startAt([Timestamp.fromDate(from)]) // >= from
+        .limit(3)
+        .snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final todayReminders = _reminders.where((r) {
-      return r.dateTime.day == now.day &&
-          r.dateTime.month == now.month &&
-          r.dateTime.year == now.year;
-    }).toList();
-
-    // Ordenar por hora
-    todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-
-    final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
-    final completedCount = todayReminders.where((r) => r.isCompleted).length;
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email ?? 'Usuario';
+    final userName = email.split('@')[0];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E3A5F),
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: CircleAvatar(
-                backgroundColor: Colors.white24,
-                radius: 18,
-                child: Icon(Icons.person, color: Colors.white, size: 20),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Bienvenido',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const Text(
-                    'USUARIO',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
         ),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
-                  );
-                },
-              ),
-              if (pendingCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '$pendingCount',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AjustesScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.delayed(Duration(seconds: 1));
-          setState(() {});
-        },
-        child: SingleChildScrollView(
-          physics: AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header con gradiente
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF1E3A5F),
-                      Color(0xFF2D5082),
-                      Color(0xFF4A90E2),
-                    ],
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(30),
-                    bottomRight: Radius.circular(30),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header con logo y saludo
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      _getFormattedDate(now),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      todayReminders.isEmpty
-                          ? 'No tienes recordatorios hoy'
-                          : pendingCount == 0
-                              ? '¡Todos los recordatorios completados!'
-                              : 'Tienes $pendingCount ${pendingCount == 1 ? 'recordatorio' : 'recordatorios'}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _buildStatCard(
-                          'Total',
-                          '${todayReminders.length}',
-                          Icons.calendar_today,
-                          Colors.white24,
-                        ),
-                        SizedBox(width: 12),
-                        _buildStatCard(
-                          'Completados',
-                          '$completedCount',
-                          Icons.check_circle,
-                          Colors.green.withOpacity(0.3),
-                        ),
-                        SizedBox(width: 12),
-                        _buildStatCard(
-                          'Pendientes',
-                          '$pendingCount',
-                          Icons.pending,
-                          Colors.orange.withOpacity(0.3),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // Contenido principal
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                color: Color(0xFF1E3A5F),
-                                size: 24,
-                              ),
-                              SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  'Recordatorios de Hoy',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E3A5F),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const HistorialScreen(),
-                              ),
-                            );
-                          },
-                          icon: Icon(Icons.history, size: 18),
-                          label: Text('Historial'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Color(0xFF4A90E2),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Lista de recordatorios
-                    if (todayReminders.isEmpty)
-                      _buildEmptyState()
-                    else
-                      ...todayReminders.map((reminder) => _buildReminderCard(reminder)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AgregarRecordatorioScreen(),
-            ),
-          );
-        },
-        backgroundColor: const Color(0xFF4A90E2),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Nuevo Recordatorio',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        elevation: 4,
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: Offset(0, -2),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFF4A90E2),
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          elevation: 0,
-          backgroundColor: Colors.white,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Inicio',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.people_outline),
-              activeIcon: Icon(Icons.people),
-              label: 'Cuidadores',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.history_outlined),
-              activeIcon: Icon(Icons.history),
-              label: 'Historial',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Ajustes',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          children: [
-            Container(
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.check_circle_outline,
-                size: 64,
-                color: Colors.grey[400],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No hay recordatorios para hoy',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[700],
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '¡Perfecto! Disfruta tu día libre',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AgregarRecordatorioScreen(),
-                  ),
-                );
-              },
-              icon: Icon(Icons.add),
-              label: Text('Agregar Recordatorio'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF4A90E2),
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
-    
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // Icono del tipo
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: reminder.type == 'medication'
-                            ? [Colors.blue[400]!, Colors.blue[600]!]
-                            : [Colors.green[400]!, Colors.green[600]!],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (reminder.type == 'medication' 
-                              ? Colors.blue 
-                              : Colors.green).withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      reminder.type == 'medication' 
-                          ? Icons.medication 
-                          : Icons.directions_run,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Información del recordatorio
-                  Expanded(
-                    child: Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          reminder.title,
-                          style: TextStyle(
-                            fontSize: 16,
+                          'Hola, $userName',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          reminder.description,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.access_time, 
-                                  size: 14, 
-                                  color: isPast ? Colors.red : Colors.grey[500],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: isPast ? Colors.red : Color(0xFF4A90E2),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
-                                const SizedBox(width: 4),
-                                Text(
-                                  reminder.frequency,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[500],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                        const Text(
+                          'Gestiona tus recordatorios',
+                          style: TextStyle(color: Colors.white60, fontSize: 15),
                         ),
                       ],
                     ),
-                  ),
-
-                  // Botón de acción
-                  const SizedBox(width: 8),
-                  if (!reminder.isCompleted)
-                    ElevatedButton(
-                      onPressed: () => _marcarComoCompletado(reminder),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        elevation: 2,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Image.asset(
+                        'assets/vital_recorder_nobg.png',
+                        height: 50,
+                        width: 50,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 28),
+
+                // Sección de próximos recordatorios
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.check, size: 18),
-                          SizedBox(width: 4),
-                          Text(
-                            'Confirmar',
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A90E2).withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.upcoming_outlined,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Próximos Recordatorios',
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
-                    )
-                  else
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                        size: 32,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            
-            // Indicador de estado omitido
-            if (isPast)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Omitido',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
+                      const SizedBox(height: 16),
+                      user != null
+                          ? StreamBuilder<QuerySnapshot>(
+                              stream: _getUpcomingReminders(user.uid),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(20.0),
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                if (snapshot.hasError) {
+                                  // Muestra el error (útil si falta un índice compuesto)
+                                  return Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.error_outline,
+                                            color: Colors.redAccent, size: 20),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            'Error al cargar: ${snapshot.error}\n'
+                                            'Si Firestore sugiere crear un índice, ábrelo y créalo.',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
+                                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                                  return Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Row(
+                                      children: [
+                                        Icon(Icons.info_outline, color: Colors.white60, size: 20),
+                                        SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            'No hay recordatorios próximos',
+                                            style: TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
+                                return Column(
+                                  children: snapshot.data!.docs.map((doc) {
+                                    final data = doc.data() as Map<String, dynamic>;
+                                    final title = data['title'] ?? 'Sin título';
+                                    final ts = data['dateTime'];
+                                    final dateTime = ts is Timestamp
+                                        ? ts.toDate()
+                                        : DateTime.tryParse(ts?.toString() ?? '') ?? DateTime.now();
+                                    final type = (data['type'] ?? 'General').toString();
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: _getTypeColor(type),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              _getTypeIcon(type),
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  title,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  _formatDateTime(dateTime),
+                                                  style: TextStyle(
+                                                    color: Colors.white.withOpacity(0.6),
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                );
+                              },
+                            )
+                          : const Text(
+                              'Inicia sesión para ver recordatorios',
+                              style: TextStyle(color: Colors.white60),
+                            ),
+                    ],
                   ),
                 ),
-              ),
-          ],
+
+                const SizedBox(height: 32),
+
+                // Grid de opciones principales
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 0.85,
+                  children: [
+                    _buildMenuCard(
+                      context,
+                      title: 'Agregar',
+                      subtitle: 'Recordatorio',
+                      icon: Icons.add_circle_outline,
+                      colors: [const Color(0xFF4A90E2), const Color(0xFF357ABD)],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AgregarRecordatorioScreen()),
+                      ),
+                    ),
+                    _buildMenuCard(
+                      context,
+                      title: 'Historial',
+                      subtitle: 'Ver todos',
+                      icon: Icons.history,
+                      colors: [const Color(0xFF3AB54A), const Color(0xFF2E8B41)],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HistorialScreen()),
+                      ),
+                    ),
+                    _buildMenuCard(
+                      context,
+                      title: 'Notificaciones',
+                      subtitle: 'Alertas',
+                      icon: Icons.notifications_outlined,
+                      colors: [const Color(0xFFFF9800), const Color(0xFFFFB74D)],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const NotificacionesScreen()),
+                      ),
+                    ),
+                    _buildMenuCard(
+                      context,
+                      title: 'Cuidador',
+                      subtitle: 'Asignar',
+                      icon: Icons.supervised_user_circle_outlined,
+                      colors: [const Color(0xFF8E24AA), const Color(0xFFBA68C8)],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AsignarCuidadorScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Botón de ajustes y cerrar sesión
+                _buildTransparentButton(
+                  context,
+                  text: 'Ajustes',
+                  icon: Icons.settings_outlined,
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AjustesScreen()),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                _buildTransparentButton(
+                  context,
+                  text: 'Cerrar Sesión',
+                  icon: Icons.logout_outlined,
+                  isLogout: true,
+                  onPressed: () async {
+                    await FirebaseAuth.instance.signOut();
+                    Navigator.popUntil(context, (route) => route.isFirst);
+                  },
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  String _getFormattedDate(DateTime date) {
-    const months = [
-      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-    ];
-    const days = [
-      'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
-    ];
-    
-    final dayName = days[date.weekday - 1];
-    final day = date.day;
-    final month = months[date.month - 1];
-    final year = date.year;
-    
-    return '$dayName, $day de $month de $year';
+  Widget _buildMenuCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> colors,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: colors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: Colors.white, size: 26),
+              ),
+              const Spacer(),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.85),
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransparentButton(
+    BuildContext context, {
+    required String text,
+    required IconData icon,
+    required VoidCallback onPressed,
+    bool isLogout = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 56,
+      decoration: BoxDecoration(
+        color: isLogout ? Colors.red.withOpacity(0.15) : Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isLogout ? Colors.red.withOpacity(0.3) : Colors.white.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Icon(icon, color: isLogout ? Colors.red[300] : Colors.white70),
+                const SizedBox(width: 16),
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: isLogout ? Colors.red[300] : Colors.white70,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getTypeColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'medicación':
+      case 'medicamento':
+        return const Color(0xFF4A90E2);
+      case 'cita':
+      case 'cita médica':
+        return const Color(0xFF3AB54A);
+      case 'tarea':
+      case 'ejercicio':
+        return const Color(0xFFFF9800);
+      default:
+        return const Color(0xFF8E24AA);
+    }
+  }
+
+  IconData _getTypeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'medicación':
+      case 'medicamento':
+        return Icons.medication_outlined;
+      case 'cita':
+      case 'cita médica':
+        return Icons.event_outlined;
+      case 'tarea':
+        return Icons.task_outlined;
+      case 'ejercicio':
+        return Icons.fitness_center_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = dateTime.difference(now);
+
+    if (difference.inDays == 0) {
+      if (difference.inHours < 1) {
+        final mins = difference.inMinutes;
+        if (mins <= 0) {
+          return 'Ahora';
+        }
+        return 'En $mins min';
+      }
+      return 'Hoy a las ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      return 'Mañana a las ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else {
+      return '${dateTime.day}/${dateTime.month} a las ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+    }
   }
 }
