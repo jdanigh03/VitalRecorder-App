@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'asignar_cuidador.dart';
+import 'perfil_usuario.dart';
 
 class AjustesScreen extends StatefulWidget {
   const AjustesScreen({Key? key}) : super(key: key);
@@ -101,8 +102,9 @@ class _AjustesScreenState extends State<AjustesScreen> {
               Icons.person,
               Colors.blue,
               () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Función en desarrollo')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PerfilUsuarioScreen()),
                 );
               },
             ),

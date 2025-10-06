@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'editar_cuidador.dart';
 
 class AsignarCuidadorScreen extends StatefulWidget {
   const AsignarCuidadorScreen({Key? key}) : super(key: key);
@@ -29,9 +30,21 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
   final List<Map<String, String>> _cuidadoresAsignados = [
     {
       'nombre': 'María García',
-      'email': 'maria@example.com',
+      'email': 'maria.garcia@example.com',
       'relacion': 'Familiar',
       'telefono': '+591 12345678',
+    },
+    {
+      'nombre': 'Dr. Carlos Mendoza',
+      'email': 'carlos.mendoza@hospital.com',
+      'relacion': 'Médico',
+      'telefono': '+591 87654321',
+    },
+    {
+      'nombre': 'Ana López',
+      'email': 'ana.lopez@cuidado.com',
+      'relacion': 'Cuidador profesional',
+      'telefono': '+591 11223344',
     },
   ];
 
@@ -585,11 +598,7 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                     if (value == 'delete') {
                       _mostrarDialogoEliminar(cuidador);
                     } else if (value == 'edit') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Función de edición en desarrollo'),
-                        ),
-                      );
+                      _editarCuidador(cuidador);
                     } else if (value == 'notifications') {
                       _mostrarDialogoNotificaciones(cuidador);
                     }
@@ -640,6 +649,28 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _editarCuidador(Map<String, String> cuidador) async {
+    final resultado = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditarCuidadorScreen(cuidador: cuidador),
+      ),
+    );
+    
+    if (resultado != null) {
+      // Actualizar el cuidador en la lista
+      setState(() {
+        final index = _cuidadoresAsignados.indexWhere(
+          (c) => c['nombre'] == cuidador['nombre'] && 
+                 c['email'] == cuidador['email']
+        );
+        if (index != -1) {
+          _cuidadoresAsignados[index] = Map<String, String>.from(resultado);
+        }
+      });
+    }
   }
 
   void _mostrarDialogoNotificaciones(Map<String, String> cuidador) {

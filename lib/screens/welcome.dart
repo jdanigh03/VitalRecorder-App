@@ -19,6 +19,7 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   int _selectedIndex = 0;
+  String _userName = 'Usuario'; // Datos placeholder
   
   // Lista de recordatorios de ejemplo
   final List<Reminder> _reminders = [
@@ -161,9 +162,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       fontSize: 12,
                     ),
                   ),
-                  const Text(
-                    'USUARIO',
-                    style: TextStyle(
+                  Text(
+                    _userName.toUpperCase(),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
