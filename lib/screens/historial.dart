@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/reminder.dart';
+import '../services/reminder_service.dart';
 import 'detalle_recordatorio.dart';
+import 'agregar_recordatorio.dart';
 
 class HistorialScreen extends StatefulWidget {
   const HistorialScreen({Key? key}) : super(key: key);
@@ -12,45 +14,10 @@ class HistorialScreen extends StatefulWidget {
 class _HistorialScreenState extends State<HistorialScreen> {
   String _filterType = 'Todos';
   DateTime? _selectedDate;
+  final ReminderService _reminderService = ReminderService();
 
-  final List<Reminder> _allReminders = [
-    Reminder(
-      id: '1',
-      title: 'Amoxicilina 1g',
-      description: 'Tomar 1 comprimido',
-      dateTime: DateTime.now().subtract(Duration(days: 1)).copyWith(hour: 9),
-      frequency: 'Diario',
-      isCompleted: true,
-    ),
-    Reminder(
-      id: '2',
-      title: 'Ibuprofeno 400mg',
-      description: 'Tomar con alimentos',
-      dateTime: DateTime.now().subtract(Duration(days: 2)).copyWith(hour: 14),
-      frequency: 'Cada 8 horas',
-      isCompleted: true,
-    ),
-    Reminder(
-      id: '3',
-      title: 'Caminata',
-      description: '30 minutos',
-      dateTime: DateTime.now().subtract(Duration(days: 3)).copyWith(hour: 18),
-      frequency: 'Diario',
-      type: 'activity',
-      isCompleted: false,
-    ),
-    Reminder(
-      id: '4',
-      title: 'Vitamina D',
-      description: '1 cápsula',
-      dateTime: DateTime.now().copyWith(hour: 8),
-      frequency: 'Diario',
-      isCompleted: true,
-    ),
-  ];
-
-  List<Reminder> get _filteredReminders {
-    List<Reminder> filtered = _allReminders;
+  List<Reminder> _filterReminders(List<Reminder> allReminders) {
+    List<Reminder> filtered = List.from(allReminders);
 
     if (_filterType == 'Medicamentos') {
       filtered = filtered.where((r) => r.type == 'medication').toList();
@@ -151,8 +118,54 @@ class _HistorialScreenState extends State<HistorialScreen> {
             ),
           ),
           Expanded(
-            child: _filteredReminders.isEmpty
-                ? Center(
+            child: StreamBuilder<List<Reminder>>(
+              stream: _reminderService.getRemindersStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF4A90E2),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 80,
+                          color: Colors.red[300],
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Error al cargar recordatorios',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.red[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Intenta nuevamente',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final allReminders = snapshot.data ?? [];
+                final filteredReminders = _filterReminders(allReminders);
+
+                if (filteredReminders.isEmpty) {
+                  return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -163,26 +176,73 @@ class _HistorialScreenState extends State<HistorialScreen> {
                         ),
                         SizedBox(height: 16),
                         Text(
-                          'No hay recordatorios',
+                          allReminders.isEmpty 
+                            ? 'No hay recordatorios'
+                            : 'No hay recordatorios que coincidan con el filtro',
                           style: TextStyle(
                             fontSize: 18,
                             color: Colors.grey[600],
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        if (allReminders.isEmpty) ...[
+                          SizedBox(height: 8),
+                          Text(
+                            'Crea tu primer recordatorio',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AgregarRecordatorioScreen(),
+                                ),
+                              );
+                              // No necesitamos hacer nada aquí, StreamBuilder se actualizará automáticamente
+                            },
+                            icon: Icon(Icons.add),
+                            label: Text('Agregar Recordatorio'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Color(0xFF4A90E2),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.all(16),
-                    itemCount: _filteredReminders.length,
-                    itemBuilder: (context, index) {
-                      final reminder = _filteredReminders[index];
-                      return _buildReminderCard(reminder);
-                    },
-                  ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: EdgeInsets.all(16),
+                  itemCount: filteredReminders.length,
+                  itemBuilder: (context, index) {
+                    final reminder = filteredReminders[index];
+                    return _buildReminderCard(reminder);
+                  },
+                );
+              },
+            ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AgregarRecordatorioScreen(),
+            ),
+          );
+          // StreamBuilder se actualizará automáticamente
+        },
+        backgroundColor: Color(0xFF4A90E2),
+        child: Icon(Icons.add, color: Colors.white),
       ),
     );
   }

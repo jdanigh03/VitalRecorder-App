@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/reminder.dart';
+import '../services/reminder_service.dart';
 
 class AgregarRecordatorioScreen extends StatefulWidget {
   final Reminder? reminder;
@@ -97,18 +98,83 @@ class _AgregarRecordatorioScreenState extends State<AgregarRecordatorioScreen> {
     }
   }
 
-  void _saveReminder() {
+  Future<void> _saveReminder() async {
     if (_formKey.currentState!.validate()) {
-      // Aquí guardarías el recordatorio en tu base de datos o estado global
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.reminder == null 
-            ? 'Recordatorio creado exitosamente' 
-            : 'Recordatorio actualizado exitosamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context);
+      try {
+        // Mostrar loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Center(
+            child: CircularProgressIndicator(
+              color: Color(0xFF4A90E2),
+            ),
+          ),
+        );
+
+        // Combinar fecha y hora
+        final combinedDateTime = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          _selectedTime.hour,
+          _selectedTime.minute,
+        );
+
+        // Crear objeto recordatorio
+        final reminder = Reminder(
+          id: widget.reminder?.id ?? '', // Vacío para nuevos, ReminderService generará ID
+          title: _titleController.text.trim(),
+          description: _descriptionController.text.trim(),
+          dateTime: combinedDateTime,
+          frequency: _selectedFrequency,
+          type: _selectedType,
+          isCompleted: widget.reminder?.isCompleted ?? false,
+        );
+
+        // Guardar en Firestore
+        final reminderService = ReminderService();
+        bool success;
+        
+        if (widget.reminder == null) {
+          // Crear nuevo
+          success = await reminderService.createReminder(reminder);
+        } else {
+          // Actualizar existente
+          success = await reminderService.updateReminder(reminder);
+        }
+
+        // Cerrar loading
+        Navigator.pop(context);
+
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(widget.reminder == null 
+                ? 'Recordatorio creado exitosamente' 
+                : 'Recordatorio actualizado exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Retornar true para indicar que se guardó
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al guardar el recordatorio'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        // Cerrar loading si algo sale mal
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: \$e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

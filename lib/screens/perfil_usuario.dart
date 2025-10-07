@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/user_service.dart';
+import '../models/user.dart';
 
 class PerfilUsuarioScreen extends StatefulWidget {
   const PerfilUsuarioScreen({Key? key}) : super(key: key);
@@ -28,9 +31,13 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
 
   final List<String> _opcionesSexo = ['Masculino', 'Femenino', 'Otro', 'Prefiero no decir'];
 
-  // Datos de ejemplo (placeholder)
-  final String _userEmail = 'usuario@gmail.com';
-  final DateTime _accountCreated = DateTime(2025, 9, 2, 17, 14, 49);
+  // Servicios de Firebase
+  final UserService _userService = UserService();
+  
+  // Datos dinámicos de Firebase
+  String _userEmail = '';
+  DateTime? _accountCreated;
+  UserModel? _currentUserData;
 
   @override
   void initState() {
@@ -48,22 +55,59 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   }
 
   Future<void> _loadUserData() async {
-    // Simular carga de datos
-    await Future.delayed(Duration(milliseconds: 1000));
-    
-    setState(() {
-      // Cargar datos de ejemplo
-      _nombresController.text = 'Usuario';
-      _apellidosController.text = '';
-      _fechaNacimiento = DateTime(2003, 12, 15);
-      _sexoSeleccionado = null;
-      _telefonoController.text = '78822909';
-      _familiarEmailController.text = '';
-      _intensidadVibracion = 2;
-      _modoSilencio = false;
-      _notificarAFamiliar = false;
-      _isLoading = false;
-    });
+    try {
+      // Obtener información básica del usuario
+      final userInfo = await _userService.getUserDisplayInfo();
+      _userEmail = userInfo['email'] ?? 'Sin email';
+      
+      // Obtener datos completos del usuario desde Firestore
+      _currentUserData = await _userService.getCurrentUserData();
+      
+      // Obtener usuario de Firebase Auth para fecha de creación
+      final firebaseUser = _userService.currentUser;
+      if (firebaseUser != null && firebaseUser.metadata.creationTime != null) {
+        _accountCreated = firebaseUser.metadata.creationTime;
+      }
+      
+      if (_currentUserData != null) {
+        // Cargar datos desde Firestore
+        _nombresController.text = _currentUserData!.persona.nombres;
+        _apellidosController.text = _currentUserData!.persona.apellidos;
+        _fechaNacimiento = _currentUserData!.persona.fechaNac;  // Usar fechaNac
+        _sexoSeleccionado = _currentUserData!.persona.sexo?.isNotEmpty == true 
+            ? _currentUserData!.persona.sexo 
+            : null;
+        _telefonoController.text = _currentUserData!.settings.telefono;
+        _familiarEmailController.text = _currentUserData!.settings.familiarEmail ?? '';  // Usar familiarEmail
+        _intensidadVibracion = _currentUserData!.settings.intensidadVibracion;
+        _modoSilencio = _currentUserData!.settings.modoSilencio;
+        _notificarAFamiliar = _currentUserData!.settings.notificarAFamiliar;
+      } else {
+        // Si no hay datos en Firestore, usar valores predeterminados
+        _nombresController.text = userInfo['nombre'] ?? 'Usuario';
+        _apellidosController.text = '';
+        _fechaNacimiento = null;
+        _sexoSeleccionado = null;
+        _telefonoController.text = '';
+        _familiarEmailController.text = '';
+        _intensidadVibracion = 2;
+        _modoSilencio = false;
+        _notificarAFamiliar = false;
+        
+        // Crear usuario inicial si no existe
+        await _userService.createInitialUser();
+      }
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error cargando datos del usuario: \$e');
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorSnackBar('Error al cargar los datos del perfil');
+    }
   }
 
   Future<void> _saveUserData() async {
@@ -71,24 +115,63 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
 
     setState(() => _isSaving = true);
     
-    // Simular guardado
-    await Future.delayed(Duration(milliseconds: 1500));
-    
-    setState(() => _isSaving = false);
-    
-    _showSuccessSnackBar('Perfil actualizado exitosamente');
-    
-    // Imprimir los datos que se guardarían
-    print('=== DATOS DEL PERFIL ===');
-    print('Nombres: ${_nombresController.text}');
-    print('Apellidos: ${_apellidosController.text}');
-    print('Fecha nacimiento: ${_fechaNacimiento?.toString()}');
-    print('Sexo: $_sexoSeleccionado');
-    print('Teléfono: ${_telefonoController.text}');
-    print('Email familiar: ${_familiarEmailController.text}');
-    print('Intensidad vibración: $_intensidadVibracion');
-    print('Modo silencio: $_modoSilencio');
-    print('Notificar familiar: $_notificarAFamiliar');
+    try {
+      // Validar email del familiar si se proporcionó
+      if (_familiarEmailController.text.trim().isNotEmpty) {
+        final emailValido = await _userService.validateFamiliarEmail(_familiarEmailController.text.trim());
+        if (!emailValido) {
+          setState(() => _isSaving = false);
+          _showErrorSnackBar('El email del familiar no es válido o es el mismo que el tuyo');
+          return;
+        }
+      }
+
+      // Crear objeto UserModel con todos los datos
+      final updatedUser = UserModel(
+        email: _userEmail,
+        persona: UserPersona(
+          nombres: _nombresController.text.trim(),
+          apellidos: _apellidosController.text.trim(),
+          fechaNac: _fechaNacimiento,  // Usar fechaNac
+          sexo: _sexoSeleccionado,
+        ),
+        settings: UserSettings(
+          telefono: _telefonoController.text.trim(),
+          familiarEmail: _familiarEmailController.text.trim().isNotEmpty   // Usar familiarEmail
+              ? _familiarEmailController.text.trim() 
+              : null,
+          intensidadVibracion: _intensidadVibracion,
+          modoSilencio: _modoSilencio,
+          notificarAFamiliar: _notificarAFamiliar,
+        ),
+        createdAt: _currentUserData?.createdAt ?? DateTime.now(),
+      );
+
+      // Guardar en Firestore
+      final success = await _userService.createOrUpdateUser(updatedUser);
+      
+      setState(() => _isSaving = false);
+      
+      if (success) {
+        _currentUserData = updatedUser;
+        _showSuccessSnackBar('Perfil actualizado exitosamente');
+        
+        // Log para debug
+        print('=== PERFIL GUARDADO EN FIREBASE ===');
+        print('Email: ${_userEmail}');
+        print('Nombres: ${_nombresController.text}');
+        print('Apellidos: ${_apellidosController.text}');
+        print('Teléfono: ${_telefonoController.text}');
+        print('Email familiar: ${_familiarEmailController.text}');
+        print('Guardado exitoso en Firestore');
+      } else {
+        _showErrorSnackBar('Error al guardar el perfil. Intenta nuevamente.');
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+      print('Error guardando perfil: \$e');
+      _showErrorSnackBar('Error inesperado al guardar el perfil');
+    }
   }
 
   void _showErrorSnackBar(String message) {
@@ -666,7 +749,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'Cuenta creada: ${DateFormat('dd/MM/yyyy').format(_accountCreated)}',
+                  'Cuenta creada: ${_accountCreated != null ? DateFormat('dd/MM/yyyy').format(_accountCreated!) : 'No disponible'}',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[700],

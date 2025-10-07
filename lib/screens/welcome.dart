@@ -4,11 +4,15 @@
 import 'package:flutter/material.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder.dart';
+import '../models/user.dart';
+import '../services/user_service.dart';
+import '../services/reminder_service.dart';
 import 'agregar_recordatorio.dart';
 import 'detalle_recordatorio.dart';
 import 'historial.dart';
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
+import 'perfil_usuario.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -19,44 +23,91 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   int _selectedIndex = 0;
-  String _userName = 'Usuario'; // Datos placeholder
+  String _userName = 'Usuario';
+  bool _isLoading = true;
   
-  // Lista de recordatorios de ejemplo
-  final List<Reminder> _reminders = [
-    Reminder(
-      id: '1',
-      title: 'Amoxicilina 1g',
-      description: 'Tomar 1 comprimido',
-      dateTime: DateTime.now().copyWith(hour: 9, minute: 0),
-      frequency: 'Diario',
-      type: 'medication',
-    ),
-    Reminder(
-      id: '2',
-      title: 'Ibuprofeno 400mg',
-      description: 'Tomar con alimentos',
-      dateTime: DateTime.now().copyWith(hour: 14, minute: 0),
-      frequency: 'Cada 8 horas',
-      type: 'medication',
-    ),
-    Reminder(
-      id: '3',
-      title: 'Caminata',
-      description: '30 minutos',
-      dateTime: DateTime.now().copyWith(hour: 18, minute: 0),
-      frequency: 'Diario',
-      type: 'activity',
-    ),
-    Reminder(
-      id: '4',
-      title: 'Vitamina D',
-      description: '1 cápsula',
-      dateTime: DateTime.now().copyWith(hour: 8, minute: 0),
-      frequency: 'Diario',
-      type: 'medication',
-      isCompleted: true,
-    ),
-  ];
+  // Servicios de Firebase
+  final UserService _userService = UserService();
+  final ReminderService _reminderService = ReminderService();
+  
+  // Datos del usuario
+  UserModel? _currentUserData;
+  List<Reminder> _todayReminders = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Obtener información básica del usuario
+      final userInfo = await _userService.getUserDisplayInfo();
+      final userEmail = userInfo['email'] ?? 'Sin email';
+      
+      // Obtener datos completos del usuario desde Firestore
+      _currentUserData = await _userService.getCurrentUserData();
+      
+      // Actualizar nombre de usuario
+      if (_currentUserData != null) {
+        final nombres = _currentUserData!.persona.nombres;
+        _userName = nombres.isNotEmpty ? nombres : userInfo['nombre'] ?? 'Usuario';
+      } else {
+        _userName = userInfo['nombre'] ?? 'Usuario';
+      }
+
+      print('=== DATOS USUARIO CARGADOS ===');
+      print('Email: $userEmail');
+      print('Nombre: $_userName');
+      
+      // Cargar recordatorios de hoy
+      await _loadTodayReminders();
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error cargando datos del usuario: $e');
+      setState(() {
+        _isLoading = false;
+        _userName = 'Usuario';
+      });
+    }
+  }
+
+  Future<void> _loadTodayReminders() async {
+    try {
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      
+      final allReminders = await _reminderService.getRemindersForDateRange(startOfDay, endOfDay);
+      
+      // Filtrar recordatorios de hoy y ordenar por hora
+      _todayReminders = allReminders.where((r) {
+        return r.dateTime.day == now.day &&
+            r.dateTime.month == now.month &&
+            r.dateTime.year == now.year;
+      }).toList();
+      
+      // Ordenar por hora
+      _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      
+      print('=== RECORDATORIOS DE HOY CARGADOS ===');
+      print('Total recordatorios hoy: ${_todayReminders.length}');
+      for (final reminder in _todayReminders) {
+        print('- ${reminder.title} a las ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
+      }
+    } catch (e) {
+      print('Error cargando recordatorios: $e');
+      _todayReminders = [];
+    }
+  }
 
   void _onItemTapped(int index) {
     if (index == _selectedIndex) return;
@@ -87,13 +138,45 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     }
   }
 
-  void _marcarComoCompletado(Reminder reminder) {
-    setState(() {
-      final index = _reminders.indexWhere((r) => r.id == reminder.id);
-      if (index != -1) {
-        _reminders[index] = reminder.copyWith(isCompleted: true);
+  void _marcarComoCompletado(Reminder reminder) async {
+    try {
+      // Actualizar en Firebase
+      final success = await _reminderService.markAsCompleted(reminder.id, true);
+      
+      if (success) {
+        // Actualizar estado local
+        setState(() {
+          final index = _todayReminders.indexWhere((r) => r.id == reminder.id);
+          if (index != -1) {
+            _todayReminders[index] = reminder.copyWith(isCompleted: true);
+          }
+        });
+      } else {
+        throw Exception('No se pudo actualizar en Firebase');
       }
-    });
+    } catch (e) {
+      print('Error marcando recordatorio como completado: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('Error al completar recordatorio'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -118,15 +201,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final todayReminders = _reminders.where((r) {
-      return r.dateTime.day == now.day &&
-          r.dateTime.month == now.month &&
-          r.dateTime.year == now.year;
-    }).toList();
-
-    // Ordenar por hora
-    todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    // Usar _todayReminders que ya viene filtrado y ordenado desde Firebase
+    final todayReminders = _todayReminders;
 
     final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
     final completedCount = todayReminders.where((r) => r.isCompleted).length;
@@ -228,8 +304,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await Future.delayed(Duration(seconds: 1));
-          setState(() {});
+          await _loadUserData();
         },
         child: SingleChildScrollView(
           physics: AlwaysScrollableScrollPhysics(),
@@ -259,7 +334,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _getFormattedDate(now),
+                      _getFormattedDate(DateTime.now()),
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
@@ -359,8 +434,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Lista de recordatorios
-                    if (todayReminders.isEmpty)
+                    // Lista de recordatorios con loading state
+                    if (_isLoading)
+                      _buildLoadingState()
+                    else if (todayReminders.isEmpty)
                       _buildEmptyState()
                     else
                       ...todayReminders.map((reminder) => _buildReminderCard(reminder)),
@@ -473,6 +550,32 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          children: [
+            CircularProgressIndicator(
+              color: Color(0xFF4A90E2),
+              strokeWidth: 3,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Cargando recordatorios...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
