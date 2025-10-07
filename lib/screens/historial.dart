@@ -20,9 +20,9 @@ class _HistorialScreenState extends State<HistorialScreen> {
     List<Reminder> filtered = List.from(allReminders);
 
     if (_filterType == 'Medicamentos') {
-      filtered = filtered.where((r) => r.type == 'medication').toList();
+      filtered = filtered.where((r) => r.type == 'Medicación').toList();
     } else if (_filterType == 'Actividades') {
-      filtered = filtered.where((r) => r.type == 'activity').toList();
+      filtered = filtered.where((r) => r.type == 'Tarea' || r.type == 'Cita').toList();
     } else if (_filterType == 'Completados') {
       filtered = filtered.where((r) => r.isCompleted).toList();
     } else if (_filterType == 'Pendientes') {
@@ -298,14 +298,15 @@ class _HistorialScreenState extends State<HistorialScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: reminder.type == 'medication'
-                    ? Colors.blue.withOpacity(0.1)
-                    : Colors.green.withOpacity(0.1),
+                color: reminder.type == 'Medicación' ? Colors.blue.withOpacity(0.1) : 
+                       reminder.type == 'Cita' ? Colors.purple.withOpacity(0.1) : Colors.green.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                reminder.type == 'medication' ? Icons.medication : Icons.directions_run,
-                color: reminder.type == 'medication' ? Colors.blue : Colors.green,
+                reminder.type == 'Medicación' ? Icons.medication : 
+                reminder.type == 'Cita' ? Icons.event : Icons.task,
+                color: reminder.type == 'Medicación' ? Colors.blue : 
+                       reminder.type == 'Cita' ? Colors.purple : Colors.green,
                 size: 24,
               ),
             ),

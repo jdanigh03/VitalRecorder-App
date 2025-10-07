@@ -10,6 +10,7 @@ import '../services/reminder_service.dart';
 import 'agregar_recordatorio.dart';
 import 'detalle_recordatorio.dart';
 import 'historial.dart';
+import 'calendario.dart';
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
 import 'perfil_usuario.dart';
@@ -21,10 +22,11 @@ class WelcomeScreen extends StatefulWidget {
   State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen> {
+class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   String _userName = 'Usuario';
   bool _isLoading = true;
+  bool _hasInitialized = false;
   
   // Servicios de Firebase
   final UserService _userService = UserService();
@@ -37,7 +39,35 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _hasInitialized = false;
     _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Recargar datos solo después de la inicialización inicial y cuando la pantalla se hace visible
+    if (_hasInitialized) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadUserData();
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Recargar cuando la app vuelve a primer plano
+    if (state == AppLifecycleState.resumed && _hasInitialized) {
+      _loadUserData();
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -70,6 +100,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       
       setState(() {
         _isLoading = false;
+        _hasInitialized = true;
       });
     } catch (e) {
       print('Error cargando datos del usuario: $e');
@@ -121,19 +152,28 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
+        ).then((_) {
+          setState(() => _selectedIndex = 0);
+          _loadUserData();
+        });
         break;
       case 2:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const HistorialScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
+          MaterialPageRoute(builder: (context) => const CalendarioScreen()),
+        ).then((_) {
+          setState(() => _selectedIndex = 0);
+          _loadUserData();
+        });
         break;
       case 3:
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const AjustesScreen()),
-        ).then((_) => setState(() => _selectedIndex = 0));
+        ).then((_) {
+          setState(() => _selectedIndex = 0);
+          _loadUserData();
+        });
         break;
     }
   }
@@ -415,20 +455,40 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             ],
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const HistorialScreen(),
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const CalendarioScreen(),
+                                  ),
+                                );
+                              },
+                              icon: Icon(Icons.file_download, size: 18),
+                              label: Text('Exportar'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Color(0xFF4A90E2),
                               ),
-                            );
-                          },
-                          icon: Icon(Icons.history, size: 18),
-                          label: Text('Historial'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Color(0xFF4A90E2),
-                          ),
+                            ),
+                            SizedBox(width: 8),
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const CalendarioScreen(),
+                                  ),
+                                );
+                              },
+                              icon: Icon(Icons.calendar_view_month, size: 18),
+                              label: Text('Calendario'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Color(0xFF4A90E2),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
