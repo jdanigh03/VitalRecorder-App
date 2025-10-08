@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:vital_recorder_app/screens/notificaciones.dart';
+import '../services/cuidador_service.dart';
+import '../services/user_service.dart';
 import '../models/reminder.dart';
 import '../models/user.dart';
-import '../services/user_service.dart';
-import '../services/cuidador_service.dart';
-import '../services/invitacion_service.dart';
 import 'cuidador_pacientes_screen.dart';
 import 'cuidador_recordatorios_screen.dart';
 import 'cuidador_reportes_screen.dart';
-import 'cuidador_pacientes_recordatorios.dart';
-import 'invitaciones_cuidador.dart';
 import 'ajustes.dart';
+import 'notificaciones.dart';
 import 'auth_wrapper.dart';
 
 class CuidadorDashboard extends StatefulWidget {
@@ -30,12 +27,10 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   // Servicios
   final CuidadorService _cuidadorService = CuidadorService();
   final UserService _userService = UserService();
-  final InvitacionService _invitacionService = InvitacionService();
   
   // Datos
   UserModel? _currentUserData;
   List<Reminder> _todayReminders = [];
-  int _invitacionesPendientes = 0;
 
   @override
   void initState() {
@@ -71,29 +66,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     }
   }
 
-  // Configurar stream para monitorear invitaciones en tiempo real
-  void _setupInvitacionesStream() {
-    if (!_hasInitialized) return;
-    
-    _invitacionService.getInvitacionesRecibidasStream().listen((invitaciones) {
-      final newCount = invitaciones.where((inv) => inv.esPendiente).length;
-      
-      // Si hay cambios en las invitaciones pendientes
-      if (newCount != _invitacionesPendientes && mounted) {
-        // Si aumentó el número, mostrar notificación
-        if (newCount > _invitacionesPendientes) {
-          _mostrarNotificacionNuevaInvitacion();
-        }
-        
-        setState(() {
-          _invitacionesPendientes = newCount;
-        });
-      }
-    }, onError: (error) {
-      print('Error en stream de invitaciones: $error');
-    });
-  }
-
   Future<void> _loadUserData() async {
     try {
       setState(() {
@@ -121,9 +93,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       
       // Cargar recordatorios de hoy de pacientes asignados
       await _loadTodayRemindersFromPatients();
-      
-      // Cargar invitaciones pendientes
-      await _loadInvitacionesPendientes();
       
       setState(() {
         _isLoading = false;
@@ -163,58 +132,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       print('Error cargando recordatorios de pacientes: $e');
       _todayReminders = [];
     }
-  }
-
-  Future<void> _loadInvitacionesPendientes() async {
-    try {
-      final invitaciones = await _invitacionService.getInvitacionesRecibidas();
-      final newCount = invitaciones.where((inv) => inv.esPendiente).length;
-      
-      // Si hay más invitaciones pendientes que antes, mostrar notificación
-      if (newCount > _invitacionesPendientes && _hasInitialized) {
-        _mostrarNotificacionNuevaInvitacion();
-      }
-      
-      _invitacionesPendientes = newCount;
-      
-      print('=== INVITACIONES PENDIENTES ===');
-      print('Total invitaciones pendientes: $_invitacionesPendientes');
-    } catch (e) {
-      print('Error cargando invitaciones pendientes: $e');
-      _invitacionesPendientes = 0;
-    }
-  }
-
-  void _mostrarNotificacionNuevaInvitacion() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.mail, color: Colors.white),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text('¡Tienes una nueva invitación de un paciente!'),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Ver',
-          textColor: Colors.white,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const InvitacionesCuidadorScreen()),
-            ).then((_) {
-              _loadUserData();
-            });
-          },
-        ),
-      ),
-    );
   }
 
   void _onItemTapped(int index) {
@@ -337,49 +254,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
           ],
         ),
         actions: [
-          // Botón de invitaciones
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.mail_outline, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const InvitacionesCuidadorScreen()),
-                  ).then((_) {
-                    // Recargar datos al regresar
-                    _loadUserData();
-                  });
-                },
-              ),
-              if (_invitacionesPendientes > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.orange,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '$_invitacionesPendientes',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          // Botón de notificaciones
           Stack(
             children: [
               IconButton(
@@ -523,7 +397,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                           child: Row(
                             children: [
                               Icon(
-                                Icons.schedule,
+                                Icons.supervisor_account,
                                 color: Color(0xFF1E3A5F),
                                 size: 24,
                               ),
@@ -542,30 +416,8 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                             ],
                           ),
                         ),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                        Row(
                           children: [
-                            TextButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => CuidadorPacientesRecordatoriosScreen(),
-                                  ),
-                                ).then((_) => _loadUserData());
-                              },
-                              icon: Icon(Icons.folder_shared, size: 18),
-                              label: Text('Por Pacientes'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Color(0xFF4A90E2),
-                                backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
-                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
                             TextButton.icon(
                               onPressed: () {
                                 Navigator.push(
@@ -581,6 +433,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 foregroundColor: Color(0xFF4A90E2),
                               ),
                             ),
+                            SizedBox(width: 8),
                             TextButton.icon(
                               onPressed: () {
                                 Navigator.push(
@@ -954,7 +807,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     ),
                   ),
 
-                  // Botón de acción o estado - adaptado para cuidador
+                  // Estado del recordatorio
                   const SizedBox(width: 8),
                   Container(
                     padding: EdgeInsets.all(8),
@@ -977,7 +830,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                           : isPast 
                               ? Colors.red
                               : Colors.orange,
-                      size: 32,
+                      size: 24,
                     ),
                   ),
                 ],
@@ -996,7 +849,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Omitido',
+                    'Vencido',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,

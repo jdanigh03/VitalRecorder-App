@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/cuidador_service.dart';
+import '../services/invitacion_service.dart';
 import '../models/user.dart';
+import 'invitaciones_cuidador.dart';
+import 'cuidador_recordatorios_paciente_detalle.dart';
+import '../models/invitacion_cuidador.dart';
 import '../widgets/dashboard_widgets.dart';
 
 class CuidadorPacientesScreen extends StatefulWidget {
@@ -10,15 +14,19 @@ class CuidadorPacientesScreen extends StatefulWidget {
 
 class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
   final CuidadorService _cuidadorService = CuidadorService();
+  final InvitacionService _invitacionService = InvitacionService();
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
+  bool _isLoadingInvitations = true;
   List<UserModel> _pacientes = [];
+  List<InvitacionCuidador> _invitacionesPendientes = [];
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadPatients();
+    _loadInvitations();
   }
 
   @override
@@ -44,6 +52,19 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _loadInvitations() async {
+    try {
+      final invitaciones = await _invitacionService.getInvitacionesRecibidas();
+      setState(() {
+        _invitacionesPendientes = invitaciones.where((inv) => inv.esPendiente).toList();
+        _isLoadingInvitations = false;
+      });
+    } catch (e) {
+      print('Error cargando invitaciones: $e');
+      setState(() => _isLoadingInvitations = false);
     }
   }
 
@@ -216,6 +237,10 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
               ],
             ),
           ),
+
+          // Alerta de invitaciones pendientes
+          if (!_isLoadingInvitations && _invitacionesPendientes.isNotEmpty)
+            _buildInvitationAlert(),
 
           // Contenido principal
           Expanded(
@@ -520,33 +545,281 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
   }
 
   void _showPatientReminders(UserModel patient) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CuidadorRecordatoriosPacienteDetalleScreen(
+          paciente: patient,
+        ),
+      ),
+    );
+  }
+
+  void _showPatientStats(UserModel patient) async {
+    // Mostrar loading primero
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Recordatorios de ${patient.nombreCompleto.isEmpty ? 'Paciente' : patient.nombreCompleto}'),
-        content: Text('Funcionalidad en desarrollo: Lista de recordatorios del paciente'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: CircularProgressIndicator(color: Color(0xFF4A90E2)),
+      ),
+    );
+
+    try {
+      // Obtener estadísticas del paciente
+      final stats = await _cuidadorService.getEstadisticasPaciente(patient.userId!);
+      
+      // Cerrar loading
+      Navigator.pop(context);
+      
+      // Mostrar estadísticas
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            'Estadísticas de ${patient.persona.nombres.isEmpty ? 'Paciente' : patient.persona.nombres}',
+            style: TextStyle(fontSize: 16),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatRow('Total de recordatorios:', '${stats['totalRecordatorios']}', Icons.list_alt, Colors.blue),
+                _buildStatRow('Completados:', '${stats['completados']}', Icons.check_circle, Colors.green),
+                _buildStatRow('Pendientes:', '${stats['pendientes']}', Icons.schedule, Colors.orange),
+                _buildStatRow('Vencidos:', '${stats['vencidos']}', Icons.warning, Colors.red),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _getAdherenciaColor(stats['adherencia']).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _getAdherenciaColor(stats['adherencia']).withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.trending_up,
+                        color: _getAdherenciaColor(stats['adherencia']),
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Adherencia: ${stats['adherencia']}%',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _getAdherenciaColor(stats['adherencia']),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _showPatientReminders(patient);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF4A90E2),
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Ver Recordatorios'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // Cerrar loading en caso de error
+      Navigator.pop(context);
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Error'),
+          content: Text('No se pudieron cargar las estadísticas del paciente'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+  
+  Widget _buildStatRow(String label, String value, IconData icon, Color color) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              value,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: color,
+                fontSize: 14,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+  
+  Color _getAdherenciaColor(int adherencia) {
+    if (adherencia >= 80) return Colors.green;
+    if (adherencia >= 60) return Colors.orange;
+    return Colors.red;
+  }
 
-  void _showPatientStats(UserModel patient) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Estadísticas de ${patient.nombreCompleto.isEmpty ? 'Paciente' : patient.nombreCompleto}'),
-        content: Text('Funcionalidad en desarrollo: Estadísticas detalladas del paciente'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
+  Widget _buildInvitationAlert() {
+    return Container(
+      margin: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.purple[400]!, Colors.purple[600]!],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withOpacity(0.3),
+            blurRadius: 12,
+            offset: Offset(0, 6),
           ),
         ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => InvitacionesCuidadorScreen(),
+              ),
+            ).then((_) {
+              // Recargar invitaciones cuando regrese
+              _loadInvitations();
+            });
+          },
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.mail,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '¡Nuevas Solicitudes!',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_invitacionesPendientes.length}',
+                              style: TextStyle(
+                                color: Colors.purple[600],
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _invitacionesPendientes.length == 1
+                            ? 'Tienes 1 invitación pendiente de un paciente'
+                            : 'Tienes ${_invitacionesPendientes.length} invitaciones pendientes de pacientes',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 13,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Toca para ver solicitudes',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

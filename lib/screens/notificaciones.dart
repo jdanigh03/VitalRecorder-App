@@ -1,7 +1,55 @@
 import 'package:flutter/material.dart';
+import '../services/invitacion_service.dart';
+import '../models/invitacion_cuidador.dart';
+import '../services/user_service.dart';
+import 'invitaciones_cuidador.dart';
 
-class NotificacionesScreen extends StatelessWidget {
+class NotificacionesScreen extends StatefulWidget {
   const NotificacionesScreen({Key? key}) : super(key: key);
+
+  @override
+  State<NotificacionesScreen> createState() => _NotificacionesScreenState();
+}
+
+class _NotificacionesScreenState extends State<NotificacionesScreen> {
+  final InvitacionService _invitacionService = InvitacionService();
+  final UserService _userService = UserService();
+  
+  List<InvitacionCuidador> _invitacionesPendientes = [];
+  bool _isLoadingInvitations = true;
+  String? _userRole;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatos();
+  }
+
+  Future<void> _cargarDatos() async {
+    try {
+      // Obtener rol del usuario
+      final userData = await _userService.getCurrentUserData();
+      _userRole = userData?.role;
+      
+      // Si es cuidador, cargar invitaciones pendientes
+      if (_userRole == 'cuidador') {
+        final invitaciones = await _invitacionService.getInvitacionesRecibidas();
+        setState(() {
+          _invitacionesPendientes = invitaciones.where((inv) => inv.esPendiente).toList();
+          _isLoadingInvitations = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingInvitations = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoadingInvitations = false;
+      });
+      print('Error cargando datos de notificaciones: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +84,29 @@ class NotificacionesScreen extends StatelessWidget {
       },
     ];
 
+    // Combinar notificaciones regulares con invitaciones
+    final List<Widget> allNotifications = [];
+    
+    // Agregar invitaciones pendientes para cuidadores
+    if (_userRole == 'cuidador' && !_isLoadingInvitations) {
+      for (final invitacion in _invitacionesPendientes) {
+        allNotifications.add(_buildInvitationNotificationCard(invitacion));
+      }
+    }
+    
+    // Agregar notificaciones regulares
+    for (int i = 0; i < notifications.length; i++) {
+      final notification = notifications[i];
+      allNotifications.add(_buildNotificationCard(
+        context,
+        notification['title'] as String,
+        notification['message'] as String,
+        notification['time'] as String,
+        notification['isRead'] as bool,
+        notification['type'] as String,
+      ));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
@@ -65,43 +136,53 @@ class NotificacionesScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: notifications.isEmpty
+      body: _isLoadingInvitations
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.notifications_off,
-                    size: 80,
-                    color: Colors.grey[400],
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
                   ),
                   SizedBox(height: 16),
                   Text(
-                    'No tienes notificaciones',
+                    'Cargando notificaciones...',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 16,
                       color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             )
-          : ListView.builder(
-              padding: EdgeInsets.all(16),
-              itemCount: notifications.length,
-              itemBuilder: (context, index) {
-                final notification = notifications[index];
-                return _buildNotificationCard(
-                  context,
-                  notification['title'] as String,
-                  notification['message'] as String,
-                  notification['time'] as String,
-                  notification['isRead'] as bool,
-                  notification['type'] as String,
-                );
-              },
-            ),
+          : allNotifications.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.notifications_off,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'No tienes notificaciones',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: EdgeInsets.all(16),
+                  itemCount: allNotifications.length,
+                  separatorBuilder: (context, index) => SizedBox(height: 8),
+                  itemBuilder: (context, index) => allNotifications[index],
+                ),
     );
   }
 
@@ -219,5 +300,176 @@ class NotificacionesScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildInvitationNotificationCard(InvitacionCuidador invitacion) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.purple.withOpacity(0.3),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => InvitacionesCuidadorScreen(),
+            ),
+          ).then((_) {
+            // Recargar datos cuando regrese de la pantalla de invitaciones
+            _cargarDatos();
+          });
+        },
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.purple[400]!, Colors.purple[600]!],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.person_add,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Nueva Invitación',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E3A5F),
+                              ),
+                            ),
+                            Spacer(),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.purple,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'NUEVO',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '${invitacion.pacienteNombre} te invita a ser su cuidador',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Relación: ${invitacion.relacion}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.purple[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          _formatearFecha(invitacion.fechaEnvio),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purple[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.purple[100]!,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.touch_app,
+                      color: Colors.purple[600],
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Toca para ver y responder a la invitación',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.purple[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatearFecha(DateTime fecha) {
+    final now = DateTime.now();
+    final difference = now.difference(fecha);
+    
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return 'hace ${difference.inMinutes} minutos';
+      }
+      return 'hace ${difference.inHours} horas';
+    } else if (difference.inDays == 1) {
+      return 'ayer';
+    } else if (difference.inDays < 7) {
+      return 'hace ${difference.inDays} días';
+    } else {
+      return '${fecha.day}/${fecha.month}/${fecha.year}';
+    }
   }
 }

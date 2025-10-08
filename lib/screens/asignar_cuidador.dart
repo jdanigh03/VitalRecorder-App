@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'editar_cuidador.dart';
 import '../models/cuidador.dart';
+import '../models/invitacion_cuidador.dart';
 import '../services/cuidador_service.dart';
+import '../services/invitacion_service.dart';
 
 class AsignarCuidadorScreen extends StatefulWidget {
   const AsignarCuidadorScreen({Key? key}) : super(key: key);
@@ -30,9 +32,11 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
   ];
 
   List<Cuidador> _cuidadoresAsignados = [];
+  List<InvitacionCuidador> _invitacionesEnviadas = [];
   final CuidadorService _cuidadorService = CuidadorService();
+  final InvitacionService _invitacionService = InvitacionService();
   bool _isLoading = true;
-  bool _isAddingCuidador = false;
+  bool _isSendingInvitation = false;
 
   @override
   void initState() {
@@ -52,14 +56,27 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
     try {
       setState(() => _isLoading = true);
       final cuidadores = await _cuidadorService.obtenerCuidadores();
+      final invitaciones = await _invitacionService.getInvitacionesEnviadas();
       setState(() {
         _cuidadoresAsignados = cuidadores;
+        _invitacionesEnviadas = invitaciones;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      print('Error cargando cuidadores: $e');
-      _mostrarErrorSnackBar('Error al cargar los cuidadores');
+      print('Error cargando datos: $e');
+      _mostrarErrorSnackBar('Error al cargar los datos');
+    }
+  }
+
+  Future<void> _cargarInvitaciones() async {
+    try {
+      final invitaciones = await _invitacionService.getInvitacionesEnviadas();
+      setState(() {
+        _invitacionesEnviadas = invitaciones;
+      });
+    } catch (e) {
+      print('Error cargando invitaciones: $e');
     }
   }
 
@@ -80,37 +97,29 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
     );
   }
 
-  Future<void> _agregarCuidador() async {
+  Future<void> _enviarInvitacion() async {
     if (!_formKey.currentState!.validate()) return;
     
-    setState(() => _isAddingCuidador = true);
+    setState(() => _isSendingInvitation = true);
     
     try {
-      // Crear nuevo cuidador
-      final nuevoCuidador = Cuidador(
-        id: '', // Se asignará en el servicio
-        nombre: _nombreController.text.trim(),
-        email: _emailController.text.trim(),
-        telefono: _telefonoController.text.trim(),
+      // Enviar invitación al cuidador (solo email y relación)
+      final invitacionId = await _invitacionService.enviarInvitacion(
+        cuidadorEmail: _emailController.text.trim(),
+        cuidadorNombre: 'Cuidador', // Se actualizará con datos reales del registro
         relacion: _relacionSeleccionada,
-        notificaciones: NotificacionesCuidador(),
-        fechaCreacion: DateTime.now(),
       );
-
-      // Guardar en Firebase
-      final cuidadorId = await _cuidadorService.agregarCuidador(nuevoCuidador);
       
-      if (cuidadorId != null) {
-        // Recargar lista
+      if (invitacionId != null) {
+        // Recargar datos
         await _cargarCuidadores();
+        await _cargarInvitaciones();
         
         // Limpiar formulario
-        _nombreController.clear();
         _emailController.clear();
-        _telefonoController.clear();
         setState(() {
           _relacionSeleccionada = 'Familiar';
-          _isAddingCuidador = false;
+          _isSendingInvitation = false;
         });
 
         Navigator.pop(context);
@@ -119,9 +128,11 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
           SnackBar(
             content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
+                Icon(Icons.send, color: Colors.white),
                 SizedBox(width: 12),
-                Text('Cuidador agregado exitosamente'),
+                Expanded(
+                  child: Text('Invitación enviada exitosamente. El cuidador recibirá una notificación para aceptar.'),
+                ),
               ],
             ),
             backgroundColor: Colors.green,
@@ -129,13 +140,14 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
+            duration: Duration(seconds: 4),
           ),
         );
       }
     } catch (e) {
-      setState(() => _isAddingCuidador = false);
+      setState(() => _isSendingInvitation = false);
       Navigator.pop(context);
-      _mostrarErrorSnackBar('Error al agregar el cuidador: ${e.toString()}');
+      _mostrarErrorSnackBar('Error al enviar la invitación: ${e.toString()}');
     }
   }
 
@@ -181,7 +193,7 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                         ),
                         SizedBox(width: 12),
                         Text(
-                          'Agregar Cuidador',
+                          'Invitar Cuidador',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -196,46 +208,60 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                     ),
                   ],
                 ),
-                SizedBox(height: 24),
-                TextFormField(
-                  controller: _nombreController,
-                  decoration: InputDecoration(
-                    labelText: 'Nombre completo',
-                    hintText: 'Ej: Juan Pérez',
-                    prefixIcon: Icon(Icons.person, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el nombre';
-                    }
-                    if (value.length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
-                ),
                 SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info, color: Colors.blue[600], size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Sistema de Invitación',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Solo necesitas el correo del cuidador ya registrado. Él recibirá una notificación para aceptar ser tu cuidador.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blue[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
-                    labelText: 'Correo electrónico',
-                    hintText: 'ejemplo@correo.com',
+                    labelText: 'Correo del cuidador registrado',
+                    hintText: 'cuidador@email.com',
                     prefixIcon: Icon(Icons.email, color: Color(0xFF4A90E2)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     filled: true,
                     fillColor: Colors.grey[50],
+                    helperText: 'El cuidador debe estar previamente registrado',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el correo';
+                      return 'Por favor ingresa el correo del cuidador';
                     }
                     if (!value.contains('@') || !value.contains('.')) {
                       return 'Ingresa un correo válido';
@@ -243,31 +269,7 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                     return null;
                   },
                 ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: _telefonoController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Teléfono',
-                    hintText: '+591 12345678',
-                    prefixIcon: Icon(Icons.phone, color: Color(0xFF4A90E2)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa el teléfono';
-                    }
-                    if (value.length < 8) {
-                      return 'Ingresa un número válido';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
+                SizedBox(height: 20),
                 DropdownButtonFormField<String>(
                   value: _relacionSeleccionada,
                   decoration: InputDecoration(
@@ -296,8 +298,8 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _isAddingCuidador ? null : _agregarCuidador,
-                    icon: _isAddingCuidador 
+                    onPressed: _isSendingInvitation ? null : _enviarInvitacion,
+                    icon: _isSendingInvitation 
                       ? SizedBox(
                           width: 20,
                           height: 20,
@@ -306,9 +308,9 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : Icon(Icons.person_add, color: Colors.white),
+                      : Icon(Icons.send, color: Colors.white),
                     label: Text(
-                      _isAddingCuidador ? 'Agregando...' : 'Agregar Cuidador',
+                      _isSendingInvitation ? 'Enviando...' : 'Enviar Invitación',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -491,6 +493,43 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                     ..._cuidadoresAsignados.map((cuidador) {
                       return _buildCuidadorCard(cuidador);
                     }).toList(),
+                  
+                  // Sección de invitaciones enviadas
+                  if (_invitacionesEnviadas.isNotEmpty) ...[
+                    SizedBox(height: 32),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Invitaciones Enviadas',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E3A5F),
+                          ),
+                        ),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${_invitacionesEnviadas.length}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    ..._invitacionesEnviadas.map((invitacion) {
+                      return _buildInvitacionCard(invitacion);
+                    }).toList(),
+                  ],
                 ],
               ),
             ),
@@ -1019,5 +1058,280 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildInvitacionCard(InvitacionCuidador invitacion) {
+    // Definir color basado en el estado
+    Color getColorByStatus(EstadoInvitacion estado) {
+      switch (estado) {
+        case EstadoInvitacion.pendiente:
+          return Colors.orange;
+        case EstadoInvitacion.aceptada:
+          return Colors.green;
+        case EstadoInvitacion.rechazada:
+          return Colors.red;
+        case EstadoInvitacion.cancelada:
+          return Colors.grey;
+      }
+    }
+
+    // Obtener ícono basado en el estado
+    IconData getIconByStatus(EstadoInvitacion estado) {
+      switch (estado) {
+        case EstadoInvitacion.pendiente:
+          return Icons.schedule;
+        case EstadoInvitacion.aceptada:
+          return Icons.check_circle;
+        case EstadoInvitacion.rechazada:
+          return Icons.cancel;
+        case EstadoInvitacion.cancelada:
+          return Icons.help;
+      }
+    }
+
+    final color = getColorByStatus(invitacion.estado);
+    final icon = getIconByStatus(invitacion.estado);
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.2),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        color.withOpacity(0.8),
+                        color,
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        invitacion.cuidadorNombre,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E3A5F),
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.email, size: 14, color: Colors.grey[600]),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              invitacion.cuidadorEmail,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                          SizedBox(width: 6),
+                          Text(
+                            'Enviada ${_formatearFecha(invitacion.fechaEnvio)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (invitacion.estado.toLowerCase() == 'pendiente')
+                  PopupMenuButton(
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, size: 20, color: Colors.red),
+                            SizedBox(width: 12),
+                            Text('Cancelar invitación'),
+                          ],
+                        ),
+                        value: 'cancel',
+                      ),
+                    ],
+                    onSelected: (value) {
+                      if (value == 'cancel') {
+                        _cancelarInvitacion(invitacion);
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+          Divider(height: 1, thickness: 1),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.label, size: 16, color: color),
+                    SizedBox(width: 8),
+                    Text(
+                      'Relación: ${invitacion.relacion}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: color.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    invitacion.estado.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatearFecha(DateTime fecha) {
+    final now = DateTime.now();
+    final difference = now.difference(fecha);
+    
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return 'hace ${difference.inMinutes} minutos';
+      }
+      return 'hace ${difference.inHours} horas';
+    } else if (difference.inDays == 1) {
+      return 'ayer';
+    } else if (difference.inDays < 7) {
+      return 'hace ${difference.inDays} días';
+    } else {
+      return '${fecha.day}/${fecha.month}/${fecha.year}';
+    }
+  }
+
+  Future<void> _cancelarInvitacion(InvitacionCuidador invitacion) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 12),
+            Text('Cancelar Invitación'),
+          ],
+        ),
+        content: Text(
+          '¿Estás seguro de que deseas cancelar la invitación a ${invitacion.cuidadorNombre}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Sí, cancelar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      try {
+        await _invitacionService.cancelarInvitacion(invitacion.id);
+        await _cargarInvitaciones();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cancel, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Invitación cancelada exitosamente'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      } catch (e) {
+        _mostrarErrorSnackBar('Error al cancelar la invitación: ${e.toString()}');
+      }
+    }
   }
 }

@@ -101,6 +101,7 @@ class UserSettings {
 }
 
 class UserModel {
+  final String? id; // ID del documento de Firestore
   final String email;
   final UserPersona persona;
   final String role;
@@ -108,12 +109,16 @@ class UserModel {
   final DateTime createdAt;
 
   UserModel({
+    this.id,
     required this.email,
     required this.persona,
     this.role = 'user',
     required this.settings,
     required this.createdAt,
   });
+
+  // Getter para mantener compatibilidad con código que usa userId
+  String? get userId => id;
 
   Map<String, dynamic> toMap() {
     return {
@@ -139,10 +144,20 @@ class UserModel {
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    return UserModel.fromMap(data);
+    return UserModel(
+      id: doc.id, // Asignar el ID del documento
+      email: data['email'] ?? '',
+      persona: UserPersona.fromMap(data['persona'] ?? {}),
+      role: data['role'] ?? 'user',
+      settings: UserSettings.fromMap(data['settings'] ?? {}),
+      createdAt: data['createdAt'] != null 
+          ? (data['createdAt'] as Timestamp).toDate() 
+          : DateTime.now(),
+    );
   }
 
   UserModel copyWith({
+    String? id,
     String? email,
     UserPersona? persona,
     String? role,
@@ -150,6 +165,7 @@ class UserModel {
     DateTime? createdAt,
   }) {
     return UserModel(
+      id: id ?? this.id,
       email: email ?? this.email,
       persona: persona ?? this.persona,
       role: role ?? this.role,

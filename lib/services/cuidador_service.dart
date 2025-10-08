@@ -345,6 +345,11 @@ class CuidadorService {
 
   // ========== MÉTODOS PARA DASHBOARD DE CUIDADOR ==========
 
+  // Obtener pacientes asignados al cuidador actual (alias para compatibilidad)
+  Future<List<UserModel>> getPacientesAsignados() async {
+    return getPacientes();
+  }
+
   // Obtener solo los pacientes asignados al cuidador actual
   Future<List<UserModel>> getPacientes() async {
     try {
@@ -647,6 +652,244 @@ class CuidadorService {
     } catch (e) {
       print('Error obteniendo recordatorios próximos: $e');
       return [];
+    }
+  }
+
+  // ========== MÉTODOS PARA GESTIÓN DE RECORDATORIOS POR CUIDADOR ==========
+
+  // Crear recordatorio para un paciente específico
+  Future<bool> crearRecordatorioParaPaciente(String pacienteId, Reminder reminder) async {
+    try {
+      final currentUserId = currentUser?.uid;
+      final currentEmail = currentUser?.email;
+      if (currentUserId == null || currentEmail == null) {
+        throw Exception('Cuidador no autenticado');
+      }
+
+      print('=== CREANDO RECORDATORIO PARA PACIENTE ===');
+      print('Paciente ID: $pacienteId');
+      print('Cuidador: $currentEmail');
+      print('Recordatorio: ${reminder.title}');
+
+      // Verificar que el cuidador esté asignado a este paciente
+      final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
+      if (!isAssigned) {
+        throw Exception('No tienes permisos para crear recordatorios para este paciente');
+      }
+
+      // Obtener información del paciente
+      final pacienteDoc = await _firestore.collection('users').doc(pacienteId).get();
+      if (!pacienteDoc.exists) {
+        throw Exception('Paciente no encontrado');
+      }
+
+      final pacienteData = pacienteDoc.data() as Map<String, dynamic>;
+      final pacienteEmail = pacienteData['email'] ?? '';
+
+      // Crear el recordatorio en la colección general de reminders
+      final docRef = _firestore.collection('reminders').doc();
+      
+      final reminderData = {
+        'id': docRef.id,
+        'title': reminder.title,
+        'description': reminder.description,
+        'dateTime': Timestamp.fromDate(reminder.dateTime),
+        'frequency': reminder.frequency,
+        'type': reminder.type,
+        'isCompleted': false,
+        'userId': pacienteId,
+        'userEmail': pacienteEmail,
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        'createdBy': 'cuidador',
+        'cuidadorId': currentUserId,
+        'cuidadorEmail': currentEmail,
+      };
+
+      await docRef.set(reminderData);
+
+      print('=== RECORDATORIO CREADO EXITOSAMENTE ===');
+      print('ID: ${docRef.id}');
+      print('Para paciente: $pacienteEmail');
+      print('Creado por cuidador: $currentEmail');
+
+      return true;
+    } catch (e) {
+      print('Error creando recordatorio para paciente: $e');
+      return false;
+    }
+  }
+
+  // Verificar si el cuidador está asignado a un paciente específico
+  Future<bool> _isCuidadorAsignadoAPaciente(String pacienteId, String cuidadorEmail) async {
+    try {
+      final cuidadoresSnapshot = await _firestore
+          .collection('users')
+          .doc(pacienteId)
+          .collection('cuidadores')
+          .where('email', isEqualTo: cuidadorEmail)
+          .where('activo', isEqualTo: true)
+          .get();
+
+      return cuidadoresSnapshot.docs.isNotEmpty;
+    } catch (e) {
+      print('Error verificando asignación de cuidador: $e');
+      return false;
+    }
+  }
+
+  // Actualizar recordatorio de un paciente (solo si el cuidador está asignado)
+  Future<bool> actualizarRecordatorioPaciente(String pacienteId, Reminder reminder) async {
+    try {
+      final currentEmail = currentUser?.email;
+      if (currentEmail == null) {
+        throw Exception('Cuidador no autenticado');
+      }
+
+      // Verificar que el cuidador esté asignado a este paciente
+      final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
+      if (!isAssigned) {
+        throw Exception('No tienes permisos para editar recordatorios de este paciente');
+      }
+
+      // Verificar que el recordatorio existe y pertenece al paciente
+      final reminderDoc = await _firestore.collection('reminders').doc(reminder.id).get();
+      if (!reminderDoc.exists) {
+        throw Exception('Recordatorio no encontrado');
+      }
+
+      final reminderData = reminderDoc.data() as Map<String, dynamic>;
+      if (reminderData['userId'] != pacienteId) {
+        throw Exception('Este recordatorio no pertenece al paciente especificado');
+      }
+
+      // Actualizar el recordatorio
+      final updatedData = {
+        'title': reminder.title,
+        'description': reminder.description,
+        'dateTime': Timestamp.fromDate(reminder.dateTime),
+        'frequency': reminder.frequency,
+        'type': reminder.type,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      };
+
+      await _firestore.collection('reminders').doc(reminder.id).update(updatedData);
+
+      print('=== RECORDATORIO ACTUALIZADO ===');
+      print('ID: ${reminder.id}');
+      print('Por cuidador: $currentEmail');
+
+      return true;
+    } catch (e) {
+      print('Error actualizando recordatorio: $e');
+      return false;
+    }
+  }
+
+  // Obtener recordatorios de un paciente específico (solo si el cuidador está asignado)
+  Future<List<Reminder>> getRecordatoriosPaciente(String pacienteId) async {
+    try {
+      final currentEmail = currentUser?.email;
+      if (currentEmail == null) {
+        return [];
+      }
+
+      // Verificar que el cuidador esté asignado a este paciente
+      final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
+      if (!isAssigned) {
+        print('Cuidador no asignado al paciente $pacienteId');
+        return [];
+      }
+
+      // Obtener recordatorios del paciente
+      final snapshot = await _firestore
+          .collection('reminders')
+          .where('userId', isEqualTo: pacienteId)
+          .orderBy('dateTime', descending: false)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        if (data['dateTime'] is Timestamp) {
+          data['dateTime'] = (data['dateTime'] as Timestamp).toDate().toIso8601String();
+        }
+        return Reminder.fromMap(data);
+      }).toList();
+    } catch (e) {
+      print('Error obteniendo recordatorios del paciente: $e');
+      return [];
+    }
+  }
+
+  // Eliminar recordatorio de un paciente (solo si el cuidador está asignado)
+  Future<bool> eliminarRecordatorioPaciente(String pacienteId, String recordatorioId) async {
+    try {
+      final currentEmail = currentUser?.email;
+      if (currentEmail == null) {
+        throw Exception('Cuidador no autenticado');
+      }
+
+      // Verificar que el cuidador esté asignado a este paciente
+      final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
+      if (!isAssigned) {
+        throw Exception('No tienes permisos para eliminar recordatorios de este paciente');
+      }
+
+      // Verificar que el recordatorio existe y pertenece al paciente
+      final reminderDoc = await _firestore.collection('reminders').doc(recordatorioId).get();
+      if (!reminderDoc.exists) {
+        throw Exception('Recordatorio no encontrado');
+      }
+
+      final reminderData = reminderDoc.data() as Map<String, dynamic>;
+      if (reminderData['userId'] != pacienteId) {
+        throw Exception('Este recordatorio no pertenece al paciente especificado');
+      }
+
+      // Eliminar el recordatorio
+      await _firestore.collection('reminders').doc(recordatorioId).delete();
+
+      print('=== RECORDATORIO ELIMINADO ===');
+      print('ID: $recordatorioId');
+      print('Por cuidador: $currentEmail');
+
+      return true;
+    } catch (e) {
+      print('Error eliminando recordatorio: $e');
+      return false;
+    }
+  }
+
+  // Obtener estadísticas de recordatorios para un paciente específico
+  Future<Map<String, dynamic>> getEstadisticasPaciente(String pacienteId) async {
+    try {
+      final recordatorios = await getRecordatoriosPaciente(pacienteId);
+      
+      final total = recordatorios.length;
+      final completados = recordatorios.where((r) => r.isCompleted).length;
+      final pendientes = recordatorios.where((r) => !r.isCompleted).length;
+      final vencidos = recordatorios.where((r) => 
+        !r.isCompleted && r.dateTime.isBefore(DateTime.now())
+      ).length;
+      
+      final adherencia = total > 0 ? (completados / total * 100).round() : 0;
+
+      return {
+        'totalRecordatorios': total,
+        'completados': completados,
+        'pendientes': pendientes,
+        'vencidos': vencidos,
+        'adherencia': adherencia,
+      };
+    } catch (e) {
+      print('Error obteniendo estadísticas del paciente: $e');
+      return {
+        'totalRecordatorios': 0,
+        'completados': 0,
+        'pendientes': 0,
+        'vencidos': 0,
+        'adherencia': 0,
+      };
     }
   }
 }

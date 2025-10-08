@@ -5,6 +5,8 @@ import '../models/reminder.dart';
 import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
 import 'cuidador_reminder_detail_screen.dart';
+import 'cuidador_crear_recordatorio.dart';
+import 'cuidador_pacientes_recordatorios.dart';
 
 class CuidadorRecordatoriosScreen extends StatefulWidget {
   @override
@@ -168,6 +170,31 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
         ],
       ),
       body: _isLoading ? _buildLoadingView() : _buildRecordatoriosContent(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CuidadorCrearRecordatorioScreen(),
+            ),
+          ).then((result) {
+            if (result == true) {
+              // Recargar recordatorios si se creó uno nuevo
+              _loadAllReminders();
+            }
+          });
+        },
+        backgroundColor: Color(0xFF4A90E2),
+        icon: Icon(Icons.add, color: Colors.white),
+        label: Text(
+          'Crear Recordatorio',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 4,
+      ),
     );
   }
 
@@ -491,9 +518,31 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                           ],
                         ),
                       ),
-                      // Filtros
-                      Row(
+                      // Botones de acción
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => CuidadorPacientesRecordatoriosScreen(),
+                                ),
+                              ).then((_) => _loadAllReminders());
+                            },
+                            icon: Icon(Icons.folder_shared, size: 16),
+                            label: Text('Por Pacientes'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Color(0xFF4A90E2),
+                              backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
                           DropdownButton<String>(
                             value: _selectedStatus,
                             items: _statusOptions.map((status) {
@@ -989,12 +1038,24 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
 
   void _editReminder(Reminder reminder) {
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Función de edición en desarrollo'),
-        backgroundColor: Colors.blue,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CuidadorCrearRecordatorioScreen(
+          reminder: reminder,
+        ),
       ),
-    );
+    ).then((result) {
+      if (result == true) {
+        _loadAllReminders();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recordatorio actualizado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
   }
 
   void _showReminderActions() {
@@ -1075,12 +1136,23 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   void _createReminder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Redirigiendo a crear recordatorio...'),
-        backgroundColor: Colors.teal,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CuidadorCrearRecordatorioScreen(),
       ),
-    );
+    ).then((result) {
+      if (result == true) {
+        // Recargar recordatorios si se creó uno nuevo
+        _loadAllReminders();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Recordatorio creado exitosamente!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
   }
 
   void _showBatchOperations() {
