@@ -6,6 +6,11 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'screens/firebase_options.dart';  // generado por flutterfire configure
 import 'splash_screen.dart';    // tu pantalla de splash (animación / logo)
+import 'screens/auth_wrapper.dart';
+import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/welcome.dart';
+import 'screens/cuidador_dashboard.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +49,14 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const SplashScreen(),  
+      home: const SplashScreen(),
+      routes: {
+        '/auth-wrapper': (context) => const AuthWrapper(),
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/welcome': (context) => const WelcomeScreen(),
+        '/cuidador-dashboard': (context) => CuidadorDashboard(),
+      },
     );
   }
 }

@@ -18,7 +18,8 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   final _nombresController = TextEditingController();
   final _apellidosController = TextEditingController();
   final _telefonoController = TextEditingController();
-  final _familiarEmailController = TextEditingController();
+  List<TextEditingController> _familiarEmailControllers = [];
+  List<String> _familiarEmails = [];
   
   // Variables de estado
   DateTime? _fechaNacimiento;
@@ -50,8 +51,59 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
     _nombresController.dispose();
     _apellidosController.dispose();
     _telefonoController.dispose();
-    _familiarEmailController.dispose();
+    for (var controller in _familiarEmailControllers) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  void _loadFamiliarEmails(List<String> emails) {
+    _familiarEmails = List.from(emails);
+    
+    // Limpiar controladores existentes
+    for (var controller in _familiarEmailControllers) {
+      controller.dispose();
+    }
+    _familiarEmailControllers.clear();
+    
+    // Crear controladores para cada email existente
+    for (String email in _familiarEmails) {
+      final controller = TextEditingController(text: email);
+      _familiarEmailControllers.add(controller);
+    }
+    
+    // Si no hay emails, agregar al menos uno vacío
+    if (_familiarEmails.isEmpty) {
+      _addEmailField();
+    }
+  }
+  
+  void _addEmailField() {
+    setState(() {
+      _familiarEmails.add('');
+      _familiarEmailControllers.add(TextEditingController());
+    });
+  }
+  
+  void _removeEmailField(int index) {
+    if (_familiarEmailControllers.length > 1) {
+      setState(() {
+        _familiarEmailControllers[index].dispose();
+        _familiarEmailControllers.removeAt(index);
+        _familiarEmails.removeAt(index);
+      });
+    }
+  }
+  
+  List<String> _getFamiliarEmailsList() {
+    List<String> emails = [];
+    for (var controller in _familiarEmailControllers) {
+      final email = controller.text.trim();
+      if (email.isNotEmpty) {
+        emails.add(email);
+      }
+    }
+    return emails;
   }
 
   Future<void> _loadUserData() async {
@@ -78,7 +130,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
             ? _currentUserData!.persona.sexo 
             : null;
         _telefonoController.text = _currentUserData!.settings.telefono;
-        _familiarEmailController.text = _currentUserData!.settings.familiarEmail ?? '';  // Usar familiarEmail
+        _loadFamiliarEmails(_currentUserData!.settings.familiarEmails);
         _intensidadVibracion = _currentUserData!.settings.intensidadVibracion;
         _modoSilencio = _currentUserData!.settings.modoSilencio;
         _notificarAFamiliar = _currentUserData!.settings.notificarAFamiliar;
@@ -89,7 +141,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         _fechaNacimiento = null;
         _sexoSeleccionado = null;
         _telefonoController.text = '';
-        _familiarEmailController.text = '';
+        _loadFamiliarEmails([]);
         _intensidadVibracion = 2;
         _modoSilencio = false;
         _notificarAFamiliar = false;
@@ -116,12 +168,15 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
     setState(() => _isSaving = true);
     
     try {
-      // Validar email del familiar si se proporcionó
-      if (_familiarEmailController.text.trim().isNotEmpty) {
-        final emailValido = await _userService.validateFamiliarEmail(_familiarEmailController.text.trim());
-        if (!emailValido) {
+      // Obtener lista de emails familiares y validar
+      final familiarEmailsList = _getFamiliarEmailsList();
+      
+      if (familiarEmailsList.isNotEmpty) {
+        final validationResult = await _userService.validateFamiliarEmails(familiarEmailsList);
+        if (!validationResult['isValid']) {
           setState(() => _isSaving = false);
-          _showErrorSnackBar('El email del familiar no es válido o es el mismo que el tuyo');
+          final invalidEmails = validationResult['invalid'] as List<String>;
+          _showErrorSnackBar('Emails inválidos: ${invalidEmails.join(', ')}');
           return;
         }
       }
@@ -137,9 +192,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         ),
         settings: UserSettings(
           telefono: _telefonoController.text.trim(),
-          familiarEmail: _familiarEmailController.text.trim().isNotEmpty   // Usar familiarEmail
-              ? _familiarEmailController.text.trim() 
-              : null,
+          familiarEmails: familiarEmailsList,
           intensidadVibracion: _intensidadVibracion,
           modoSilencio: _modoSilencio,
           notificarAFamiliar: _notificarAFamiliar,
@@ -162,7 +215,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         print('Nombres: ${_nombresController.text}');
         print('Apellidos: ${_apellidosController.text}');
         print('Teléfono: ${_telefonoController.text}');
-        print('Email familiar: ${_familiarEmailController.text}');
+        print('Emails familiares: ${familiarEmailsList.join(', ')}');
         print('Guardado exitoso en Firestore');
       } else {
         _showErrorSnackBar('Error al guardar el perfil. Intenta nuevamente.');
@@ -339,22 +392,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                     },
                   ),
                   SizedBox(height: 16),
-                  _buildTextField(
-                    controller: _familiarEmailController,
-                    label: 'Email del familiar/cuidador',
-                    hint: 'Email para notificaciones (opcional)',
-                    icon: Icons.family_restroom,
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value?.trim().isNotEmpty ?? false) {
-                        final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                        if (!emailRegex.hasMatch(value!)) {
-                          return 'Ingresa un email válido';
-                        }
-                      }
-                      return null;
-                    },
-                  ),
+                  _buildFamiliarEmailsSection(),
                 ],
               ),
               SizedBox(height: 24),
@@ -712,6 +750,97 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFamiliarEmailsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Emails de familiares/cuidadores',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1E3A5F),
+              ),
+            ),
+            Spacer(),
+            IconButton(
+              icon: Icon(Icons.add_circle_outline, color: Color(0xFF2ECC71)),
+              onPressed: _addEmailField,
+              tooltip: 'Agregar email',
+            ),
+          ],
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Emails para notificaciones de emergencia (opcional)',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        SizedBox(height: 12),
+        ...List.generate(_familiarEmailControllers.length, (index) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _familiarEmailControllers[index],
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value?.trim().isNotEmpty ?? false) {
+                        final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                        if (!emailRegex.hasMatch(value!.trim())) {
+                          return 'Formato de email inválido';
+                        }
+                      }
+                      return null;
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'ejemplo@correo.com',
+                      prefixIcon: Icon(Icons.family_restroom, color: Color(0xFF2ECC71)),
+                      filled: true,
+                      fillColor: Color(0xFFF8F9FA),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xFF2ECC71), width: 2),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.red, width: 2),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    ),
+                  ),
+                ),
+                if (_familiarEmailControllers.length > 1)
+                  Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: IconButton(
+                      icon: Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () => _removeEmailField(index),
+                      tooltip: 'Eliminar email',
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 

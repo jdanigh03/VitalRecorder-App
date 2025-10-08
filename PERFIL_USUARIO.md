@@ -29,7 +29,7 @@ La estructura de datos implementada sigue exactamente el formato especificado:
   },
   "role": "user",
   "settings": {
-    "familiar_email": null,
+    "familiar_emails": ["familiar1@gmail.com", "familiar2@gmail.com"],
     "intensidad_vibracion": 2,
     "modo_silencio": false,
     "notificar_a_familiar": false,
@@ -49,7 +49,11 @@ La estructura de datos implementada sigue exactamente el formato especificado:
 
 ### Información de Contacto  
 - **Teléfono**: Campo requerido con validación de longitud mínima
-- **Email del familiar/cuidador**: Campo opcional con validación de formato email
+- **Emails de familiares/cuidadores**: Campos opcionales múltiples con validación de formato email
+  - Permite agregar múltiples emails de contacto de emergencia
+  - Botón para agregar nuevos campos de email
+  - Botón para eliminar emails (siempre mantiene al menos un campo)
+  - Validación individual de cada email
 
 ### Configuraciones
 - **Intensidad de vibración**: Slider de 0 a 5 niveles
@@ -65,8 +69,10 @@ La estructura de datos implementada sigue exactamente el formato especificado:
 
 ### Validaciones
 - Campos requeridos: nombres y teléfono
-- Validación de formato email para familiar
+- Validación de formato email para cada email familiar
+- Validación de que ningún email familiar sea igual al email del usuario
 - Validación de longitud mínima para teléfono (8 dígitos)
+- Validación en lote de múltiples emails familiares
 
 ### UI/UX
 - Diseño consistente con el tema de la aplicación
@@ -118,8 +124,9 @@ La estructura de datos implementada sigue exactamente el formato especificado:
 El sistema maneja todos los campos del ejemplo proporcionado:
 - Timestamps para fechas (createdAt, fecha_nac)
 - Campos anidados (persona, settings)
-- Valores null para campos opcionales
-- Diferentes tipos de datos (string, number, boolean, timestamp)
+- Arreglos de strings para emails familiares
+- Valores null/vacíos para campos opcionales
+- Diferentes tipos de datos (string, number, boolean, timestamp, array)
 
 ## Consideraciones de Desarrollo
 

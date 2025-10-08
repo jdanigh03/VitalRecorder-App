@@ -49,14 +49,14 @@ class UserPersona {
 }
 
 class UserSettings {
-  final String? familiarEmail;
+  final List<String> familiarEmails;
   final int intensidadVibracion;
   final bool modoSilencio;
   final bool notificarAFamiliar;
   final String telefono;
 
   UserSettings({
-    this.familiarEmail,
+    this.familiarEmails = const [],
     this.intensidadVibracion = 2,
     this.modoSilencio = false,
     this.notificarAFamiliar = false,
@@ -65,7 +65,7 @@ class UserSettings {
 
   Map<String, dynamic> toMap() {
     return {
-      'familiar_email': familiarEmail,
+      'familiar_emails': familiarEmails,
       'intensidad_vibracion': intensidadVibracion,
       'modo_silencio': modoSilencio,
       'notificar_a_familiar': notificarAFamiliar,
@@ -75,7 +75,7 @@ class UserSettings {
 
   factory UserSettings.fromMap(Map<String, dynamic> map) {
     return UserSettings(
-      familiarEmail: map['familiar_email'],
+      familiarEmails: List<String>.from(map['familiar_emails'] ?? []),
       intensidadVibracion: map['intensidad_vibracion'] ?? 2,
       modoSilencio: map['modo_silencio'] ?? false,
       notificarAFamiliar: map['notificar_a_familiar'] ?? false,
@@ -84,14 +84,14 @@ class UserSettings {
   }
 
   UserSettings copyWith({
-    String? familiarEmail,
+    List<String>? familiarEmails,
     int? intensidadVibracion,
     bool? modoSilencio,
     bool? notificarAFamiliar,
     String? telefono,
   }) {
     return UserSettings(
-      familiarEmail: familiarEmail ?? this.familiarEmail,
+      familiarEmails: familiarEmails ?? this.familiarEmails,
       intensidadVibracion: intensidadVibracion ?? this.intensidadVibracion,
       modoSilencio: modoSilencio ?? this.modoSilencio,
       notificarAFamiliar: notificarAFamiliar ?? this.notificarAFamiliar,

@@ -3,7 +3,7 @@
 // ========================================
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'welcome.dart';
+import 'auth_wrapper.dart';
 import 'register_screen.dart';
 import 'forgot_password.dart';
 
@@ -41,14 +41,14 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passCtrl.text,
       );
 
-      // Si se autentica, navega a la página de bienvenida
+      // Si se autentica, usar AuthWrapper para navegar según el rol
       Navigator.pop(context); // Cierra el loader
 
       // Verifica si el usuario se autenticó correctamente antes de redirigir
       if (userCredential.user != null) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          MaterialPageRoute(builder: (_) => const AuthWrapper()),
         );
       } else {
         // Si no se autentica, muestra un mensaje

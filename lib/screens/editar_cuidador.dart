@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../models/cuidador.dart';
 
 class EditarCuidadorScreen extends StatefulWidget {
-  final Map<String, String> cuidador;
+  final Cuidador cuidador;
   
   const EditarCuidadorScreen({
     Key? key, 
@@ -35,10 +36,10 @@ class _EditarCuidadorScreenState extends State<EditarCuidadorScreen> {
   @override
   void initState() {
     super.initState();
-    _nombreController = TextEditingController(text: widget.cuidador['nombre']);
-    _emailController = TextEditingController(text: widget.cuidador['email']);
-    _telefonoController = TextEditingController(text: widget.cuidador['telefono']);
-    _relacionSeleccionada = widget.cuidador['relacion'] ?? 'Familiar';
+    _nombreController = TextEditingController(text: widget.cuidador.nombre);
+    _emailController = TextEditingController(text: widget.cuidador.email);
+    _telefonoController = TextEditingController(text: widget.cuidador.telefono);
+    _relacionSeleccionada = widget.cuidador.relacion;
   }
 
   @override
@@ -95,21 +96,17 @@ class _EditarCuidadorScreenState extends State<EditarCuidadorScreen> {
   }
 
   Color _getColorByRelacion(String relacion) {
-    switch (relacion) {
-      case 'Familiar':
-      case 'Hijo/a':
-      case 'Padre/Madre':
-      case 'Esposo/a':
-        return Colors.blue;
-      case 'Cuidador profesional':
-      case 'Enfermero/a':
-      case 'Médico':
-        return Colors.teal;
-      case 'Amigo/a':
-        return Colors.purple;
-      default:
-        return Colors.orange;
-    }
+    // Usar la lógica del modelo Cuidador
+    final tempCuidador = Cuidador(
+      id: '',
+      nombre: '',
+      email: '',
+      telefono: '',
+      relacion: relacion,
+      notificaciones: NotificacionesCuidador(),
+      fechaCreacion: DateTime.now(),
+    );
+    return Color(tempCuidador.colorPorRelacion);
   }
 
   @override

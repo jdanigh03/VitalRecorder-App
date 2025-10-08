@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_wrapper.dart';
 import 'asignar_cuidador.dart';
 import 'perfil_usuario.dart';
 
@@ -714,15 +716,30 @@ class _AjustesScreenState extends State<AjustesScreen> {
             child: Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Sesión cerrada exitosamente'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+            onPressed: () async {
+              Navigator.pop(context); // Cerrar el diálogo
+              try {
+                await FirebaseAuth.instance.signOut();
+                // Navegar a AuthWrapper limpiando toda la pila de navegación
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AuthWrapper()),
+                  (route) => false,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sesión cerrada exitosamente'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error al cerrar sesión'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: Text('Cerrar Sesión', style: TextStyle(color: Colors.white)),

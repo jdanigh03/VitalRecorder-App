@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'auth_wrapper.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -24,6 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _obscure = true;
   DateTime? _birthDate;
+  String _selectedRole = 'user'; // 'user' para paciente, 'cuidador' para cuidador
 
   @override
   void dispose() {
@@ -104,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final uid = cred.user!.uid;
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'email': _emailCtrl.text.trim(),
-        'role': 'user',
+        'role': _selectedRole, // Usar el rol seleccionado por el usuario
         'persona': {
           'nombres': _nameCtrl.text.trim(),
           'apellidos': '',
@@ -116,20 +118,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'intensidad_vibracion': 2,
           'modo_silencio': false,
           'notificar_a_familiar': false,
-          'familiar_email': null,
+          'familiar_emails': [],
         },
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       Navigator.of(context).pop();
 
+      final roleMessage = _selectedRole == 'cuidador'
+          ? 'Cuenta de cuidador creada correctamente'
+          : 'Cuenta de paciente creada correctamente';
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
-              Text('Cuenta creada correctamente'),
+              Text(roleMessage),
             ],
           ),
           backgroundColor: Colors.green,
@@ -138,7 +144,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
 
-      Navigator.pop(context);
+      // Navegar directamente según el rol seleccionado
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
+        (route) => false,
+      );
 
     } on FirebaseAuthException catch (e) {
       Navigator.of(context).pop();
@@ -355,6 +366,88 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             icon: Icons.calendar_today_outlined,
                           ),
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Selector de Rol
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Tipo de Usuario',
+                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          RadioListTile<String>(
+                            title: Row(
+                              children: [
+                                Icon(Icons.person, color: Color(0xFF4A90E2), size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Paciente',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1E3A5F),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: const Text(
+                              'Necesito recordatorios para mis medicamentos',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            value: 'user',
+                            groupValue: _selectedRole,
+                            activeColor: Color(0xFF4A90E2),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedRole = value!;
+                              });
+                            },
+                          ),
+                          const Divider(height: 1),
+                          RadioListTile<String>(
+                            title: Row(
+                              children: [
+                                Icon(Icons.medical_services, color: Color(0xFF4A90E2), size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Cuidador',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1E3A5F),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: const Text(
+                              'Ayudo a cuidar a familiares o pacientes',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            value: 'cuidador',
+                            groupValue: _selectedRole,
+                            activeColor: Color(0xFF4A90E2),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedRole = value!;
+                              });
+                            },
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 24),

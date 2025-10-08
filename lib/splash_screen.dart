@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
+import 'screens/auth_wrapper.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -95,7 +95,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const LoginScreen(),
+        pageBuilder: (_, __, ___) => const AuthWrapper(),
         transitionsBuilder: (_, animation, __, child) {
           return FadeTransition(
             opacity: animation,

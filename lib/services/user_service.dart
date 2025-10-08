@@ -146,6 +146,46 @@ class UserService {
     }
   }
 
+  // Validar lista de emails familiares
+  Future<Map<String, dynamic>> validateFamiliarEmails(List<String> emails) async {
+    try {
+      List<String> validEmails = [];
+      List<String> invalidEmails = [];
+      String? currentUserEmail = currentUser?.email;
+      
+      for (String email in emails) {
+        if (email.trim().isEmpty) continue;
+        
+        // Verificar que no sea el mismo email del usuario actual
+        if (currentUserEmail != null && currentUserEmail == email.trim()) {
+          invalidEmails.add('$email (es tu propio email)');
+          continue;
+        }
+        
+        // Verificar formato básico de email
+        final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+        if (emailRegex.hasMatch(email.trim())) {
+          validEmails.add(email.trim());
+        } else {
+          invalidEmails.add('$email (formato inválido)');
+        }
+      }
+      
+      return {
+        'valid': validEmails,
+        'invalid': invalidEmails,
+        'isValid': invalidEmails.isEmpty,
+      };
+    } catch (e) {
+      print('Error validando emails de familiares: $e');
+      return {
+        'valid': <String>[],
+        'invalid': ['Error de validación'],
+        'isValid': false,
+      };
+    }
+  }
+
   // Obtener información básica para mostrar en la UI
   Future<Map<String, String>> getUserDisplayInfo() async {
     try {
@@ -156,6 +196,7 @@ class UserService {
               ? userData.nombreCompleto 
               : 'Usuario',
           'email': userData.email,
+          'role': userData.role,
         };
       } else {
         // Fallback a datos de Firebase Auth
@@ -163,6 +204,7 @@ class UserService {
         return {
           'nombre': user?.displayName ?? 'Usuario',
           'email': user?.email ?? '',
+          'role': 'user', // default role
         };
       }
     } catch (e) {
@@ -170,7 +212,57 @@ class UserService {
       return {
         'nombre': 'Usuario',
         'email': '',
+        'role': 'user',
       };
+    }
+  }
+
+  // Verificar si el usuario actual es paciente
+  Future<bool> isPatient() async {
+    try {
+      final userData = await getCurrentUserData();
+      return userData?.role == 'user' || userData?.role == 'patient';
+    } catch (e) {
+      print('Error verificando si es paciente: $e');
+      return true; // default to patient
+    }
+  }
+
+  // Verificar si el usuario actual es cuidador
+  Future<bool> isCaregiver() async {
+    try {
+      final userData = await getCurrentUserData();
+      return userData?.role == 'cuidador';
+    } catch (e) {
+      print('Error verificando si es cuidador: $e');
+      return false;
+    }
+  }
+
+  // Obtener rol del usuario actual
+  Future<String> getUserRole() async {
+    try {
+      final userData = await getCurrentUserData();
+      return userData?.role ?? 'user';
+    } catch (e) {
+      print('Error obteniendo rol del usuario: $e');
+      return 'user';
+    }
+  }
+
+  // Actualizar rol del usuario
+  Future<bool> updateUserRole(String newRole) async {
+    try {
+      final user = currentUser;
+      if (user == null) return false;
+
+      await _usersCollection.doc(user.uid).update({
+        'role': newRole,
+      });
+      return true;
+    } catch (e) {
+      print('Error actualizando rol del usuario: $e');
+      return false;
     }
   }
 }
