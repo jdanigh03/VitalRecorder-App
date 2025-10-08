@@ -6,6 +6,7 @@ class Reminder {
   final String frequency;
   final bool isCompleted;
   final String type;
+  final String? userId; // ID del usuario/paciente al que pertenece
 
   Reminder({
     required this.id,
@@ -15,6 +16,7 @@ class Reminder {
     required this.frequency,
     this.isCompleted = false,
     this.type = 'medication',
+    this.userId,
   });
 
   Reminder copyWith({
@@ -25,6 +27,7 @@ class Reminder {
     String? frequency,
     bool? isCompleted,
     String? type,
+    String? userId,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -34,6 +37,7 @@ class Reminder {
       frequency: frequency ?? this.frequency,
       isCompleted: isCompleted ?? this.isCompleted,
       type: type ?? this.type,
+      userId: userId ?? this.userId,
     );
   }
 
@@ -47,6 +51,7 @@ class Reminder {
       'frequency': frequency,
       'isCompleted': isCompleted,
       'type': type,
+      'userId': userId,
     };
   }
 
@@ -60,6 +65,7 @@ class Reminder {
       frequency: map['frequency'] ?? 'Una vez',
       isCompleted: map['isCompleted'] ?? false,
       type: map['type'] ?? 'medication',
+      userId: map['userId'],
     );
   }
 }

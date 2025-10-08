@@ -172,17 +172,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       body: _isLoading ? _buildLoadingView() : _buildRecordatoriosContent(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CuidadorCrearRecordatorioScreen(),
-            ),
-          ).then((result) {
-            if (result == true) {
-              // Recargar recordatorios si se creó uno nuevo
-              _loadAllReminders();
-            }
-          });
+          _showPatientSelectionForCreate();
         },
         backgroundColor: Color(0xFF4A90E2),
         icon: Icon(Icons.add, color: Colors.white),
@@ -1037,25 +1027,16 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   void _editReminder(Reminder reminder) {
+    // Esta función necesitaría el pacienteId que no está disponible aquí
+    // Por ahora, mostrar mensaje de que no se puede editar desde esta pantalla
     Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CuidadorCrearRecordatorioScreen(
-          reminder: reminder,
-        ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Para editar un recordatorio, ve a "Por Pacientes" y selecciona el paciente específico'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 4),
       ),
-    ).then((result) {
-      if (result == true) {
-        _loadAllReminders();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Recordatorio actualizado exitosamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    });
+    );
   }
 
   void _showReminderActions() {
@@ -1136,23 +1117,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   void _createReminder() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CuidadorCrearRecordatorioScreen(),
-      ),
-    ).then((result) {
-      if (result == true) {
-        // Recargar recordatorios si se creó uno nuevo
-        _loadAllReminders();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('¡Recordatorio creado exitosamente!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    });
+    _showPatientSelectionForCreate();
   }
 
   void _showBatchOperations() {
@@ -1189,5 +1154,109 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
         backgroundColor: Colors.green,
       ),
     );
+  }
+
+  Future<void> _showPatientSelectionForCreate() async {
+    try {
+      final pacientes = await _cuidadorService.getPacientesAsignados();
+      
+      if (pacientes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No tienes pacientes asignados para crear recordatorios'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            'Seleccionar Paciente',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E3A5F),
+            ),
+          ),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: pacientes.length,
+              separatorBuilder: (context, index) => Divider(),
+              itemBuilder: (context, index) {
+                final paciente = pacientes[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Color(0xFF4A90E2),
+                    child: Text(
+                      paciente.persona.nombres.isNotEmpty
+                          ? paciente.persona.nombres[0].toUpperCase()
+                          : 'P',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    paciente.persona.nombres,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    paciente.email,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CuidadorCrearRecordatorioScreen(
+                          pacienteId: paciente.userId!,
+                          paciente: paciente,
+                        ),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _loadAllReminders();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('¡Recordatorio creado exitosamente!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('Error cargando pacientes: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar la lista de pacientes'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

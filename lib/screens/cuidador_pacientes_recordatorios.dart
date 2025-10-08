@@ -131,16 +131,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
       body: _isLoading ? _buildLoadingView() : _buildPacientesContent(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CuidadorCrearRecordatorioScreen(),
-            ),
-          ).then((result) {
-            if (result == true) {
-              _cargarDatos();
-            }
-          });
+          _showPatientSelectionDialog();
         },
         backgroundColor: Color(0xFF4A90E2),
         icon: Icon(Icons.add, color: Colors.white),
@@ -513,6 +504,92 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
           ),
         ),
       ],
+    );
+  }
+
+  void _showPatientSelectionDialog() {
+    if (_pacientes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No tienes pacientes asignados para crear recordatorios'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Seleccionar Paciente',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1E3A5F),
+          ),
+        ),
+        content: Container(
+          width: double.maxFinite,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: _pacientes.length,
+            separatorBuilder: (context, index) => Divider(),
+            itemBuilder: (context, index) {
+              final paciente = _pacientes[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Color(0xFF4A90E2),
+                  child: Text(
+                    paciente.persona.nombres.isNotEmpty
+                        ? paciente.persona.nombres[0].toUpperCase()
+                        : 'P',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  paciente.persona.nombres,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(
+                  paciente.email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CuidadorCrearRecordatorioScreen(
+                        pacienteId: paciente.userId!,
+                        paciente: paciente,
+                      ),
+                    ),
+                  ).then((result) {
+                    if (result == true) {
+                      _cargarDatos();
+                    }
+                  });
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+        ],
+      ),
     );
   }
 }
