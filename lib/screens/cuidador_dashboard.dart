@@ -536,103 +536,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     );
   }
 
-  Widget _buildLoadingView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.teal),
-          SizedBox(height: 16),
-          Text(
-            'Cargando dashboard...',
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-
-
-
-
-
-  Color _getAdherenceColor(int adherence) {
-    if (adherence >= 80) return Colors.green;
-    if (adherence >= 60) return Colors.orange;
-    return Colors.red;
-  }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Buenos días';
-    if (hour < 17) return 'Buenas tardes';
-    return 'Buenas noches';
-  }
-
-
-
-
-
-
-
-  void _showReminderDetails(Reminder reminder) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(reminder.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Descripción: ${reminder.description}'),
-            SizedBox(height: 8),
-            Text('Tipo: ${reminder.type}'),
-            SizedBox(height: 8),
-            Text('Fecha: ${reminder.dateTime.toString()}'),
-            SizedBox(height: 8),
-            Text('Estado: ${reminder.isCompleted ? 'Completado' : 'Pendiente'}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showPatientDetails(UserModel patient) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(patient.nombreCompleto.isEmpty ? 'Paciente' : patient.nombreCompleto),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Email: ${patient.email}'),
-            SizedBox(height: 8),
-            Text('Rol: ${patient.role}'),
-            if (patient.nombreCompleto.isNotEmpty) ...[
-              SizedBox(height: 8),
-              Text('Nombre: ${patient.nombreCompleto}'),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
     return Expanded(
       child: Container(
@@ -714,7 +617,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                Icons.supervisor_account,
+                Icons.supervisor_account_outlined,
                 size: 64,
                 color: Colors.grey[400],
               ),
@@ -731,7 +634,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 8),
             Text(
-              'Los recordatorios de tus pacientes aparecerán aquí',
+              'Tus pacientes no tienen recordatorios programados para hoy',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -904,48 +807,32 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     ),
                   ),
 
-                  // Botón de acción o estado
+                  // Estado del recordatorio
                   const SizedBox(width: 8),
-                  if (!reminder.isCompleted)
-                    ElevatedButton(
-                      onPressed: () => _marcarComoCompletado(reminder),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        elevation: 2,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.info, size: 18),
-                          SizedBox(width: 4),
-                          Text(
-                            'Paciente',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                        size: 32,
-                      ),
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: reminder.isCompleted 
+                          ? Colors.green.withOpacity(0.1)
+                          : isPast 
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                      shape: BoxShape.circle,
                     ),
+                    child: Icon(
+                      reminder.isCompleted 
+                          ? Icons.check_circle
+                          : isPast 
+                              ? Icons.error
+                              : Icons.schedule,
+                      color: reminder.isCompleted 
+                          ? Colors.green
+                          : isPast 
+                              ? Colors.red
+                              : Colors.orange,
+                      size: 24,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -992,6 +879,40 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     final year = date.year;
     
     return '$dayName, $day de $month de $year';
+  }
+
+
+
+
+
+
+
+  void _showReminderDetails(Reminder reminder) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(reminder.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Descripción: ${reminder.description}'),
+            SizedBox(height: 8),
+            Text('Tipo: ${reminder.type}'),
+            SizedBox(height: 8),
+            Text('Fecha: ${reminder.dateTime.toString()}'),
+            SizedBox(height: 8),
+            Text('Estado: ${reminder.isCompleted ? 'Completado' : 'Pendiente'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleLogout() async {

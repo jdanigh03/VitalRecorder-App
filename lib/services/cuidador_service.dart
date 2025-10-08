@@ -390,47 +390,82 @@ class CuidadorService {
     }
   }
 
-  // Obtener total de recordatorios de todos los pacientes
+  // Obtener total de recordatorios SOLO de pacientes asignados al cuidador actual
   Future<List<Reminder>> getAllRemindersFromPatients() async {
     try {
-      final snapshot = await _firestore.collection('reminders').get();
+      // Primero obtener los pacientes asignados al cuidador
+      final pacientesAsignados = await getPacientes();
       
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        // Convertir Timestamp a DateTime si es necesario
-        if (data['dateTime'] is Timestamp) {
-          data['dateTime'] = (data['dateTime'] as Timestamp).toDate().toIso8601String();
+      if (pacientesAsignados.isEmpty) {
+        print('No hay pacientes asignados al cuidador');
+        return [];
+      }
+      
+      // Obtener los emails de los pacientes asignados
+      final pacienteEmails = pacientesAsignados.map((p) => p.email).toList();
+      
+      List<Reminder> todosRecordatorios = [];
+      
+      // Por cada paciente asignado, obtener sus recordatorios
+      for (final email in pacienteEmails) {
+        try {
+          final snapshot = await _firestore
+              .collection('reminders')
+              .where('userEmail', isEqualTo: email)
+              .get();
+          
+          final recordatoriosPaciente = snapshot.docs.map((doc) {
+            final data = doc.data();
+            // Convertir Timestamp a DateTime si es necesario
+            if (data['dateTime'] is Timestamp) {
+              data['dateTime'] = (data['dateTime'] as Timestamp).toDate().toIso8601String();
+            }
+            return Reminder.fromMap(data);
+          }).toList();
+          
+          todosRecordatorios.addAll(recordatoriosPaciente);
+        } catch (e) {
+          print('Error obteniendo recordatorios del paciente $email: $e');
         }
-        return Reminder.fromMap(data);
-      }).toList();
+      }
+      
+      // Ordenar por fecha de manera descendente (más recientes primero)
+      todosRecordatorios.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+      
+      print('=== RECORDATORIOS DE PACIENTES ASIGNADOS ===');
+      print('Pacientes: ${pacienteEmails.length}');
+      print('Total recordatorios encontrados: ${todosRecordatorios.length}');
+      
+      return todosRecordatorios;
     } catch (e) {
-      print('Error obteniendo recordatorios de pacientes: $e');
+      print('Error obteniendo recordatorios de pacientes asignados: $e');
       return [];
     }
   }
 
-  // Obtener recordatorios de hoy de todos los pacientes
+  // Obtener recordatorios de hoy SOLO de pacientes asignados al cuidador actual
   Future<List<Reminder>> getTodayRemindersFromAllPatients() async {
     try {
+      // Obtener todos los recordatorios de pacientes asignados
+      final todosRecordatorios = await getAllRemindersFromPatients();
+      
+      // Filtrar solo los de hoy
       final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
-
-      final snapshot = await _firestore
-          .collection('reminders')
-          .where('dateTime', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('dateTime', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
-          .get();
-
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        if (data['dateTime'] is Timestamp) {
-          data['dateTime'] = (data['dateTime'] as Timestamp).toDate().toIso8601String();
-        }
-        return Reminder.fromMap(data);
+      final todayReminders = todosRecordatorios.where((r) {
+        return r.dateTime.day == now.day &&
+            r.dateTime.month == now.month &&
+            r.dateTime.year == now.year;
       }).toList();
+      
+      // Ordenar por hora
+      todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      
+      print('=== RECORDATORIOS DE HOY DE PACIENTES ASIGNADOS ===');
+      print('Total recordatorios hoy: ${todayReminders.length}');
+      
+      return todayReminders;
     } catch (e) {
-      print('Error obteniendo recordatorios de hoy: $e');
+      print('Error obteniendo recordatorios de hoy de pacientes asignados: $e');
       return [];
     }
   }

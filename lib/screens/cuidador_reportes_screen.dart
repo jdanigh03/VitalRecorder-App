@@ -65,10 +65,10 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.purple,
+        backgroundColor: const Color(0xFF1E3A5F),
         foregroundColor: Colors.white,
         title: Text(
           'Reportes y Análisis',
@@ -103,7 +103,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.purple),
+          CircularProgressIndicator(color: Color(0xFF4A90E2)),
           SizedBox(height: 16),
           Text(
             'Generando reportes...',
@@ -191,10 +191,16 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.calendar_today, color: Colors.purple),
-                          SizedBox(width: 8),
-                          Text(DateFormat('dd/MM/yyyy').format(_startDate)),
+                          Icon(Icons.calendar_today, color: Color(0xFF4A90E2), size: 16),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              DateFormat('dd/MM/yyyy').format(_startDate),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -213,10 +219,16 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.calendar_today, color: Colors.purple),
-                          SizedBox(width: 8),
-                          Text(DateFormat('dd/MM/yyyy').format(_endDate)),
+                          Icon(Icons.calendar_today, color: Color(0xFF4A90E2), size: 16),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              DateFormat('dd/MM/yyyy').format(_endDate),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -245,7 +257,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       child: OutlinedButton(
         onPressed: () => _setPeriod(days),
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.purple,
+          foregroundColor: Color(0xFF4A90E2),
         ),
         child: Text(label),
       ),
@@ -316,18 +328,25 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
               ],
             ),
             SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            Flexible(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+            Flexible(
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
           ],
@@ -360,14 +379,14 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.trending_up, size: 48, color: Colors.purple),
+                      Icon(Icons.trending_up, size: 48, color: Color(0xFF4A90E2)),
                       SizedBox(height: 8),
                       Text(
                         'Gráfico de Tendencias',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.purple,
+                          color: Color(0xFF4A90E2),
                         ),
                       ),
                       Text(
@@ -681,10 +700,10 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       margin: EdgeInsets.only(bottom: 16),
       child: ExpansionTile(
         leading: CircleAvatar(
-          backgroundColor: Colors.teal.withOpacity(0.1),
+          backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
           child: Text(
             paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto.substring(0, 1).toUpperCase() : 'P',
-            style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Color(0xFF4A90E2), fontWeight: FontWeight.bold),
           ),
         ),
         title: Text(
@@ -740,7 +759,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                         icon: Icon(Icons.visibility, size: 16),
                         label: Text('Ver Detalles'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
+                          backgroundColor: Color(0xFF4A90E2),
                           foregroundColor: Colors.white,
                         ),
                       ),
@@ -835,7 +854,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
             'Resumen Ejecutivo',
             'Métricas clave y tendencias principales',
             Icons.business,
-            Colors.purple,
+            Color(0xFF1E3A5F),
             () => _exportExecutiveSummary(),
           ),
           
@@ -987,7 +1006,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         builder: (context) => Scaffold(
           appBar: AppBar(
             title: Text('Detalles de ${paciente.nombreCompleto}'),
-            backgroundColor: Colors.teal,
+            backgroundColor: Color(0xFF1E3A5F),
             foregroundColor: Colors.white,
           ),
           body: Center(
@@ -1038,7 +1057,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Generando resumen ejecutivo...'),
-        backgroundColor: Colors.purple,
+        backgroundColor: Color(0xFF1E3A5F),
       ),
     );
   }
