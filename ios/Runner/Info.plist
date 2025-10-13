@@ -45,5 +45,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- Permisos para Bluetooth -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Esta aplicación necesita acceso a Bluetooth para conectarse con su manilla de recordatorios y enviar notificaciones.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Esta aplicación necesita acceso a Bluetooth para comunicarse con su manilla de recordatorios.</string>
+	
+	<!-- Declarar soporte para Bluetooth LE -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 </dict>
 </plist>

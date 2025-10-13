@@ -29,6 +29,20 @@ class UserService {
     }
   }
 
+  // Obtener datos de cualquier usuario por su ID
+  Future<UserModel?> getUserData(String userId) async {
+    try {
+      final doc = await _usersCollection.doc(userId).get();
+      if (doc.exists) {
+        return UserModel.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print('Error obteniendo datos del usuario por ID: $e');
+      return null;
+    }
+  }
+
   // Crear o actualizar datos del usuario
   Future<bool> createOrUpdateUser(UserModel userData) async {
     try {
