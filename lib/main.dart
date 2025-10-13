@@ -12,15 +12,22 @@ import 'screens/register_screen.dart';
 import 'screens/welcome.dart';
 import 'screens/cuidador_dashboard.dart';
 
+import 'package:vital_recorder_app/services/notification_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Inicializar localización antes de Firebase
   await initializeDateFormatting('es_ES', null);
-  
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Inicializar el servicio de notificaciones
+  final NotificationService notificationService = NotificationService();
+  await notificationService.initNotifications();
+
   runApp(const MyApp());
 }
 

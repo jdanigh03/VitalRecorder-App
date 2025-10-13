@@ -12,9 +12,10 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  firebase_core: ^3.5.0
-  firebase_auth: ^5.3.1
-  cloud_firestore: ^5.4.4
+  firebase_core: ^2.27.0
+  firebase_messaging: ^14.7.20
+  firebase_auth: ^4.17.8
+  cloud_firestore: ^4.17.5
   intl: ^0.20.2
   
   # Calendario y exportación
