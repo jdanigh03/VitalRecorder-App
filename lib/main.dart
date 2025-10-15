@@ -11,6 +11,8 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/welcome.dart';
 import 'screens/cuidador_dashboard.dart';
+import 'screens/bracelet_setup_screen.dart';
+import 'screens/bracelet_control_screen.dart';
 
 import 'package:vital_recorder_app/services/notification_service.dart';
 
@@ -63,6 +65,8 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegisterScreen(),
         '/welcome': (context) => const WelcomeScreen(),
         '/cuidador-dashboard': (context) => CuidadorDashboard(),
+        '/bracelet-setup': (context) => const BraceletSetupScreen(),
+        '/bracelet-control': (context) => const BraceletControlScreen(),
       },
     );
   }

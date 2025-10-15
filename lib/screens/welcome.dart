@@ -7,6 +7,8 @@ import '../models/reminder.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/reminder_service.dart';
+import '../services/bracelet_service.dart';
+import '../models/bracelet_device.dart';
 import 'agregar_recordatorio.dart';
 import 'detalle_recordatorio.dart';
 import 'historial.dart';
@@ -31,6 +33,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   // Servicios de Firebase
   final UserService _userService = UserService();
   final ReminderService _reminderService = ReminderService();
+  final BraceletService _braceletService = BraceletService();
   
   // Datos del usuario
   UserModel? _currentUserData;
@@ -191,6 +194,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
             _todayReminders[index] = reminder.copyWith(isCompleted: true);
           }
         });
+        
+        // Enviar notificación a la manilla si está conectada
+        _sendBraceletNotification(reminder);
       } else {
         throw Exception('No se pudo actualizar en Firebase');
       }
@@ -237,6 +243,43 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _sendBraceletNotification(Reminder reminder) async {
+    try {
+      // Solo enviar si hay una manilla conectada
+      if (!_braceletService.isConnected) {
+        print('No hay manilla conectada para enviar notificación');
+        return;
+      }
+
+      // Determinar tipo de notificación basado en el tipo de recordatorio
+      BraceletNotificationType notificationType;
+      if (reminder.type == 'medication') {
+        notificationType = BraceletNotificationType.medicationTime;
+      } else if (reminder.type == 'exercise') {
+        notificationType = BraceletNotificationType.exerciseTime;
+      } else {
+        notificationType = BraceletNotificationType.reminderAlert;
+      }
+
+      // Crear notificación para la manilla
+      final braceletNotification = BraceletNotification(
+        type: notificationType,
+        title: 'Recordatorio Completado',
+        message: '${reminder.title} - ¡Bien hecho!',
+        duration: 3, // 3 segundos de notificación
+        scheduledTime: DateTime.now(),
+      );
+
+      // Enviar a la manilla
+      await _braceletService.sendReminderNotification(braceletNotification);
+      print('Notificación enviada a la manilla: ${reminder.title}');
+
+    } catch (e) {
+      print('Error enviando notificación a la manilla: $e');
+      // No mostrar error al usuario ya que es funcionalidad secundaria
+    }
   }
 
   @override
@@ -419,6 +462,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                         ),
                       ],
                     ),
+                    const SizedBox(height: 20),
+                    // Widget de estado de la manilla
+                    _buildBraceletWidget(),
                   ],
                 ),
               ),
@@ -921,6 +967,88 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBraceletWidget() {
+    return AnimatedBuilder(
+      animation: _braceletService,
+      builder: (context, child) {
+        final device = _braceletService.connectedDevice;
+        final isConnected = device?.connectionStatus == BraceletConnectionStatus.connected;
+        
+        return GestureDetector(
+          onTap: () {
+            if (isConnected) {
+              Navigator.of(context).pushNamed('/bracelet-control');
+            } else {
+              Navigator.of(context).pushNamed('/bracelet-setup');
+            }
+          },
+          child: Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isConnected 
+                        ? Colors.green.withOpacity(0.2)
+                        : Colors.grey.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isConnected ? Icons.watch : Icons.watch_off,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isConnected 
+                            ? 'Manilla Conectada' 
+                            : 'Configurar Manilla',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        isConnected 
+                            ? '${device!.name} • Lista para notificaciones'
+                            : 'Conecta tu manilla ESP32-C3 para recordatorios LED',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.white.withOpacity(0.7),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
