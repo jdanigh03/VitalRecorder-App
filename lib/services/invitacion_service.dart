@@ -3,12 +3,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/invitacion_cuidador.dart';
 import '../models/cuidador.dart';
 import '../models/user.dart';
+import '../models/paciente.dart';
 import '../services/user_service.dart';
+import '../services/paciente_service.dart';
+import 'notification_service.dart';
 
 class InvitacionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UserService _userService = UserService();
+  final PacienteService _pacienteService = PacienteService();
+  final NotificationService _notificationService = NotificationService();
 
   User? get currentUser => _auth.currentUser;
 
@@ -239,6 +244,18 @@ class InvitacionService {
       print('ID: $invitacionId');
       print('Vinculación creada entre ${invitacion.pacienteNombre} y ${invitacion.cuidadorNombre}');
 
+      // Enviar notificación al paciente (NO al cuidador)
+      await _notificationService.enviarNotificacionPushAUsuario(
+        destinatarioUserId: invitacion.pacienteId,
+        titulo: '¡Invitación Aceptada!',
+        mensaje: '${invitacion.cuidadorNombre} ha aceptado tu invitación para ser tu cuidador.',
+        data: {
+          'tipo': 'invitacion_aceptada',
+          'cuidador_nombre': invitacion.cuidadorNombre,
+          'relacion': invitacion.relacion,
+        },
+      );
+
       return true;
     } catch (e) {
       print('Error aceptando invitación: $e');
@@ -302,9 +319,24 @@ class InvitacionService {
     }
   }
 
-  // Crear vinculación en la subcolección del paciente
+  // Crear vinculación en la subcolección del paciente y sincronizar con el nuevo sistema
   Future<void> _crearVinculacionCuidador(InvitacionCuidador invitacion) async {
     try {
+      // Obtener el ID del cuidador desde la colección users
+      final cuidadorUserDoc = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: invitacion.cuidadorEmail)
+          .where('role', isEqualTo: 'cuidador')
+          .limit(1)
+          .get();
+
+      if (cuidadorUserDoc.docs.isEmpty) {
+        throw Exception('No se encontró el usuario cuidador');
+      }
+
+      final cuidadorUserId = cuidadorUserDoc.docs.first.id;
+
+      // 1. Crear documento en la subcolección del paciente (sistema original)
       final cuidadorData = Cuidador(
         id: '', // Se asignará automáticamente
         nombre: invitacion.cuidadorNombre,
@@ -315,7 +347,6 @@ class InvitacionService {
         fechaCreacion: DateTime.now(),
       );
 
-      // Crear documento en la subcolección del paciente
       final docRef = _firestore
           .collection('users')
           .doc(invitacion.pacienteId)
@@ -325,13 +356,58 @@ class InvitacionService {
       final cuidadorConId = cuidadorData.copyWith(id: docRef.id);
       await docRef.set(cuidadorConId.toMap());
 
-      print('=== VINCULACIÓN CREADA ===');
+      // 2. Sincronizar con el nuevo sistema de pacientes
+      await _sincronizarConNuevoSistemaPacientes(invitacion, cuidadorUserId);
+
+      print('=== VINCULACIÓN CREADA Y SINCRONIZADA ===');
       print('Paciente ID: ${invitacion.pacienteId}');
       print('Cuidador: ${invitacion.cuidadorNombre}');
+      print('Cuidador User ID: $cuidadorUserId');
       print('Relación: ${invitacion.relacion}');
     } catch (e) {
       print('Error creando vinculación: $e');
       rethrow;
+    }
+  }
+
+  // Sincronizar la vinculación con el nuevo sistema de PacienteService
+  Future<void> _sincronizarConNuevoSistemaPacientes(InvitacionCuidador invitacion, String cuidadorUserId) async {
+    try {
+      // Verificar si ya existe un perfil de paciente en la nueva colección
+      final pacienteExistente = await _pacienteService.getPacienteByEmail(invitacion.pacienteEmail);
+      
+      if (pacienteExistente == null) {
+        // Crear nuevo perfil de paciente
+        final userData = await _userService.getUserData(invitacion.pacienteId);
+        if (userData != null) {
+          final nuevoPaciente = Paciente(
+            id: '', // Se asignará automáticamente por Firestore
+            nombre: invitacion.pacienteNombre,
+            email: invitacion.pacienteEmail,
+            telefono: userData.settings.telefono,
+            cuidadoresIds: [cuidadorUserId],
+            informacionMedica: {},
+            fechaRegistro: DateTime.now(),
+          );
+          
+          final pacienteId = await _pacienteService.crearPaciente(nuevoPaciente);
+          print('=== PERFIL DE PACIENTE CREADO ===');
+          print('Paciente ID en nueva colección: $pacienteId');
+        }
+      } else {
+        // Actualizar paciente existente agregando el cuidador
+        final exito = await _pacienteService.asignarCuidador(pacienteExistente.id, cuidadorUserId);
+        if (exito) {
+          print('=== CUIDADOR ASIGNADO A PACIENTE EXISTENTE ===');
+          print('Paciente ID: ${pacienteExistente.id}');
+          print('Cuidador agregado: $cuidadorUserId');
+        }
+      }
+      
+    } catch (e) {
+      print('Error sincronizando con nuevo sistema: $e');
+      // No lanzar la excepción para no afectar el flujo principal
+      // El sistema original seguirá funcionando
     }
   }
 

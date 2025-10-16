@@ -107,6 +107,10 @@ class UserModel {
   final String role;
   final UserSettings settings;
   final DateTime createdAt;
+  // Campos para relaciones cuidador-paciente
+  final List<String> pacientesIds; // IDs de pacientes (para cuidadores)
+  final List<String> cuidadoresIds; // IDs de cuidadores (para pacientes)
+  final String? pacienteId; // ID del perfil de paciente (si el usuario es paciente)
 
   UserModel({
     this.id,
@@ -115,6 +119,9 @@ class UserModel {
     this.role = 'user',
     required this.settings,
     required this.createdAt,
+    this.pacientesIds = const [],
+    this.cuidadoresIds = const [],
+    this.pacienteId,
   });
 
   // Getter para mantener compatibilidad con código que usa userId
@@ -127,6 +134,9 @@ class UserModel {
       'role': role,
       'settings': settings.toMap(),
       'createdAt': Timestamp.fromDate(createdAt),
+      'pacientesIds': pacientesIds,
+      'cuidadoresIds': cuidadoresIds,
+      'pacienteId': pacienteId,
     };
   }
 
@@ -139,6 +149,9 @@ class UserModel {
       createdAt: map['createdAt'] != null 
           ? (map['createdAt'] as Timestamp).toDate() 
           : DateTime.now(),
+      pacientesIds: List<String>.from(map['pacientesIds'] ?? []),
+      cuidadoresIds: List<String>.from(map['cuidadoresIds'] ?? []),
+      pacienteId: map['pacienteId'],
     );
   }
 
@@ -153,6 +166,9 @@ class UserModel {
       createdAt: data['createdAt'] != null 
           ? (data['createdAt'] as Timestamp).toDate() 
           : DateTime.now(),
+      pacientesIds: List<String>.from(data['pacientesIds'] ?? []),
+      cuidadoresIds: List<String>.from(data['cuidadoresIds'] ?? []),
+      pacienteId: data['pacienteId'],
     );
   }
 
@@ -163,6 +179,9 @@ class UserModel {
     String? role,
     UserSettings? settings,
     DateTime? createdAt,
+    List<String>? pacientesIds,
+    List<String>? cuidadoresIds,
+    String? pacienteId,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -171,6 +190,9 @@ class UserModel {
       role: role ?? this.role,
       settings: settings ?? this.settings,
       createdAt: createdAt ?? this.createdAt,
+      pacientesIds: pacientesIds ?? this.pacientesIds,
+      cuidadoresIds: cuidadoresIds ?? this.cuidadoresIds,
+      pacienteId: pacienteId ?? this.pacienteId,
     );
   }
 
