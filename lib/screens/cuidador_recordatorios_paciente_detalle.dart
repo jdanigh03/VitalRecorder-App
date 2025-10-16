@@ -151,7 +151,8 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
             context,
             MaterialPageRoute(
               builder: (context) => CuidadorCrearRecordatorioScreen(
-                pacienteId: widget.paciente.userId,
+                pacienteId: widget.paciente.userId!,
+                paciente: widget.paciente,
               ),
             ),
           ).then((result) {

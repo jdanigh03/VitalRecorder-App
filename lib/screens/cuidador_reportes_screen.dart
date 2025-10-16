@@ -4,6 +4,8 @@ import '../services/cuidador_service.dart';
 import '../models/reminder.dart';
 import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
+import '../utils/export_utils.dart';
+import 'cuidador_recordatorios_paciente_detalle.dart';
 
 class CuidadorReportesScreen extends StatefulWidget {
   @override
@@ -615,6 +617,32 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildPatientRanking() {
+    // Calcular adherencia real para cada paciente
+    List<Map<String, dynamic>> pacientesConAdherencia = [];
+    
+    for (final paciente in _pacientes) {
+      // Obtener recordatorios del paciente específico
+      final recordatoriosPaciente = _reminders.where((r) => 
+        r.userId == paciente.userId
+      ).toList();
+      
+      int adherencia = 0;
+      if (recordatoriosPaciente.isNotEmpty) {
+        final completados = recordatoriosPaciente.where((r) => r.isCompleted).length;
+        final total = recordatoriosPaciente.length;
+        adherencia = ((completados / total) * 100).round();
+      }
+      
+      pacientesConAdherencia.add({
+        'paciente': paciente,
+        'adherencia': adherencia,
+        'recordatorios': recordatoriosPaciente.length,
+      });
+    }
+    
+    // Ordenar por adherencia descendente
+    pacientesConAdherencia.sort((a, b) => b['adherencia'].compareTo(a['adherencia']));
+    
     return Card(
       elevation: 2,
       child: Padding(
@@ -630,27 +658,33 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
             ListView.builder(
               shrinkWrap: true,
               physics: NeverScrollableScrollPhysics(),
-              itemCount: _pacientes.take(5).length,
+              itemCount: pacientesConAdherencia.take(5).length,
               itemBuilder: (context, index) {
-                final paciente = _pacientes[index];
-                final adherence = 85 - (index * 10); // Simulado
+                final item = pacientesConAdherencia[index];
+                final paciente = item['paciente'] as UserModel;
+                final adherencia = item['adherencia'] as int;
+                final totalRecordatorios = item['recordatorios'] as int;
+                
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: _getAdherenceColor(adherence).withOpacity(0.2),
-                    child: Text('${index + 1}'),
+                    backgroundColor: _getAdherenceColor(adherencia).withOpacity(0.2),
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                   title: Text(paciente.nombreCompleto.isEmpty ? 'Paciente ${index + 1}' : paciente.nombreCompleto),
-                  subtitle: Text(paciente.email),
+                  subtitle: Text('${paciente.email} • $totalRecordatorios recordatorios'),
                   trailing: Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getAdherenceColor(adherence).withOpacity(0.1),
+                      color: _getAdherenceColor(adherencia).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '$adherence%',
+                      '$adherencia%',
                       style: TextStyle(
-                        color: _getAdherenceColor(adherence),
+                        color: _getAdherenceColor(adherencia),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -691,9 +725,18 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildPatientAnalysisCard(UserModel paciente, int index) {
-    final adherence = 90 - (index * 5); // Simulado
-    final totalReminders = 20 + index * 3; // Simulado
-    final completedReminders = (totalReminders * adherence / 100).round();
+    // Obtener recordatorios reales del paciente
+    final recordatoriosPaciente = _reminders.where((r) => 
+      r.userId == paciente.userId
+    ).toList();
+    
+    final totalReminders = recordatoriosPaciente.length;
+    final completedReminders = recordatoriosPaciente.where((r) => r.isCompleted).length;
+    final pendingReminders = totalReminders - completedReminders;
+    
+    final adherence = totalReminders > 0 
+        ? ((completedReminders / totalReminders) * 100).round() 
+        : 0;
 
     return Card(
       elevation: 2,
@@ -746,7 +789,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                       child: _buildPatientStat('Completados', '$completedReminders', Colors.green),
                     ),
                     Expanded(
-                      child: _buildPatientStat('Pendientes', '${totalReminders - completedReminders}', Colors.orange),
+                      child: _buildPatientStat('Pendientes', '$pendingReminders', Colors.orange),
                     ),
                   ],
                 ),
@@ -966,11 +1009,28 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       context: context,
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(Duration(days: 365)),
-      lastDate: DateTime.now(),
+      lastDate: _endDate,
+      locale: const Locale('es', 'ES'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Color(0xFF4A90E2),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (date != null) {
       setState(() {
         _startDate = date;
+        // Asegurarse de que la fecha final no sea anterior a la inicial
+        if (_endDate.isBefore(_startDate)) {
+          _endDate = _startDate;
+        }
       });
       _loadReportData();
     }
@@ -982,6 +1042,19 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       initialDate: _endDate,
       firstDate: _startDate,
       lastDate: DateTime.now(),
+      locale: const Locale('es', 'ES'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Color(0xFF4A90E2),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (date != null) {
       setState(() {
@@ -1003,62 +1076,302 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            title: Text('Detalles de ${paciente.nombreCompleto}'),
-            backgroundColor: Color(0xFF1E3A5F),
-            foregroundColor: Colors.white,
-          ),
-          body: Center(
-            child: Text('Análisis detallado del paciente'),
-          ),
+        builder: (context) => CuidadorRecordatoriosPacienteDetalleScreen(
+          paciente: paciente,
         ),
       ),
-    );
+    ).then((_) {
+      // Actualizar datos al regresar
+      _loadReportData();
+    });
   }
 
-  void _exportPatientReport(UserModel paciente) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Generando reporte de ${paciente.nombreCompleto}...'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+  Future<void> _exportPatientReport(UserModel paciente) async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'paciente'}...'),
+            ],
+          ),
+        ),
+      );
+
+      // Filtrar recordatorios del paciente en el período
+      final patientReminders = _reminders.where((r) => 
+        r.userId == paciente.id &&
+        r.dateTime.isAfter(_startDate.subtract(Duration(days: 1))) &&
+        r.dateTime.isBefore(_endDate.add(Duration(days: 1)))
+      ).toList();
+
+      await ExportUtils.generateCuidadorPatientPDF(
+        paciente: paciente,
+        patientReminders: patientReminders,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'paciente'} generado y compartido exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando reporte: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _exportCompletePDF() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Generando reporte completo en PDF...'),
-        backgroundColor: Colors.red,
-      ),
-    );
+  Future<void> _exportCompletePDF() async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando reporte completo en PDF...'),
+            ],
+          ),
+        ),
+      );
+
+      await ExportUtils.generateCuidadorCompletePDF(
+        pacientes: _pacientes,
+        allReminders: _reminders,
+        startDate: _startDate,
+        endDate: _endDate,
+        stats: _stats,
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reporte completo generado y compartido exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando reporte completo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _exportToExcel() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Exportando datos a Excel...'),
-        backgroundColor: Colors.green,
-      ),
-    );
+  Future<void> _exportToExcel() async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Exportando datos a Excel...'),
+            ],
+          ),
+        ),
+      );
+
+      await ExportUtils.generateCuidadorExcel(
+        pacientes: _pacientes,
+        allReminders: _reminders,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Datos exportados a Excel exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error exportando a Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _exportPatientReports() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Generando reportes por paciente...'),
-        backgroundColor: Colors.blue,
+  Future<void> _exportPatientReports() async {
+    if (_pacientes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No hay pacientes para generar reportes'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Mostrar diálogo de selección
+    final selectedPatients = await showDialog<List<UserModel>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Seleccionar Pacientes'),
+        content: Container(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Selecciona los pacientes para generar sus reportes:'),
+              SizedBox(height: 16),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _pacientes.length,
+                  itemBuilder: (context, index) {
+                    final paciente = _pacientes[index];
+                    return CheckboxListTile(
+                      title: Text(paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'Paciente ${index + 1}'),
+                      subtitle: Text(paciente.email),
+                      value: true, // Por defecto seleccionados
+                      onChanged: null, // Simplificado - todos seleccionados
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, _pacientes),
+            child: Text('Generar'),
+          ),
+        ],
       ),
     );
+
+    if (selectedPatients == null) return;
+
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando reportes de ${selectedPatients.length} pacientes...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generar un reporte por cada paciente seleccionado
+      for (final paciente in selectedPatients) {
+        final patientReminders = _reminders.where((r) => r.userId == paciente.id).toList();
+        if (patientReminders.isNotEmpty) {
+          await ExportUtils.generateCuidadorPatientPDF(
+            paciente: paciente,
+            patientReminders: patientReminders,
+            startDate: _startDate,
+            endDate: _endDate,
+          );
+        }
+      }
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${selectedPatients.length} reportes generados exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando reportes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _exportExecutiveSummary() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Generando resumen ejecutivo...'),
-        backgroundColor: Color(0xFF1E3A5F),
-      ),
-    );
+  Future<void> _exportExecutiveSummary() async {
+    try {
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando resumen ejecutivo...'),
+            ],
+          ),
+        ),
+      );
+
+      await ExportUtils.generateCuidadorExecutiveSummary(
+        pacientes: _pacientes,
+        stats: _stats,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Resumen ejecutivo generado y compartido exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando resumen ejecutivo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

@@ -387,6 +387,9 @@ class CuidadorService {
       print('=== PACIENTES ASIGNADOS AL CUIDADOR ===');
       print('Cuidador: ${currentUser?.email}');
       print('Pacientes encontrados: ${pacientesAsignados.length}');
+      for (final paciente in pacientesAsignados) {
+        print('Paciente: ${paciente.email}, userId: ${paciente.userId}');
+      }
       
       return pacientesAsignados;
     } catch (e) {
