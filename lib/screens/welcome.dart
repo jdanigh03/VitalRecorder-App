@@ -31,6 +31,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   bool _isLoading = true;
   bool _hasInitialized = false;
   
+  // Variables para selección múltiple
+  bool _isMultiSelectMode = false;
+  Set<String> _selectedReminderIds = <String>{};
+  
   // Servicios de Firebase
   final UserService _userService = UserService();
   final ReminderService _reminderService = ReminderService();
@@ -333,6 +337,101 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     }
   }
 
+  // === FUNCIONES DE SELECCIÓN MÚTIPLE ===
+  
+  void _startMultiSelect(String reminderId) {
+    setState(() {
+      _isMultiSelectMode = true;
+      _selectedReminderIds.add(reminderId);
+    });
+  }
+  
+  void _toggleSelection(String reminderId) {
+    setState(() {
+      if (_selectedReminderIds.contains(reminderId)) {
+        _selectedReminderIds.remove(reminderId);
+        // Si no hay más seleccionados, salir del modo
+        if (_selectedReminderIds.isEmpty) {
+          _isMultiSelectMode = false;
+        }
+      } else {
+        _selectedReminderIds.add(reminderId);
+      }
+    });
+  }
+  
+  void _cancelMultiSelect() {
+    setState(() {
+      _isMultiSelectMode = false;
+      _selectedReminderIds.clear();
+    });
+  }
+  
+  void _selectAll() {
+    setState(() {
+      _selectedReminderIds = _todayReminders.map((r) => r.id).toSet();
+    });
+  }
+  
+  Future<void> _completeMultipleReminders() async {
+    if (_selectedReminderIds.isEmpty) return;
+    
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      int completedCount = 0;
+      
+      for (final reminderId in _selectedReminderIds) {
+        final reminder = _todayReminders.firstWhere((r) => r.id == reminderId);
+        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+        final completionDate = reminderDate.isBefore(today) ? reminderDate : today;
+        
+        final success = await _calendarService.markReminderCompleted(reminder.id, completionDate);
+        if (success) {
+          completedCount++;
+        }
+      }
+      
+      // Salir del modo selección
+      _cancelMultiSelect();
+      
+      // Recargar la lista
+      await _loadTodayReminders();
+      setState(() {});
+      
+      // Mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('¡$completedCount recordatorios completados!'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+    } catch (e) {
+      print('Error completando múltiples recordatorios: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al completar recordatorios'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Usar _todayReminders que ya viene filtrado y ordenado desde Firebase
@@ -349,95 +448,138 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
         elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: CircleAvatar(
-                backgroundColor: Colors.white24,
-                radius: 18,
-                child: Icon(Icons.person, color: Colors.white, size: 20),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        // AppBar diferente para modo selección
+        title: _isMultiSelectMode
+            ? Text(
+                '${_selectedReminderIds.length} seleccionados',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              )
+            : Row(
                 children: [
-                  const Text(
-                    'Bienvenido',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
+                  Container(
+                    padding: EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.white24,
+                      radius: 18,
+                      child: Icon(Icons.person, color: Colors.white, size: 20),
                     ),
                   ),
-                  Text(
-                    _userName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Bienvenido',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          _userName.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
-                  );
-                },
-              ),
-              if (pendingCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '$pendingCount',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+        // Botones de acción diferentes según el modo
+        actions: _isMultiSelectMode
+            ? [
+                // Botón seleccionar todos
+                IconButton(
+                  icon: Icon(
+                    _selectedReminderIds.length == _todayReminders.length
+                        ? Icons.deselect
+                        : Icons.select_all,
+                    color: Colors.white,
                   ),
+                  onPressed: () {
+                    if (_selectedReminderIds.length == _todayReminders.length) {
+                      _cancelMultiSelect();
+                    } else {
+                      _selectAll();
+                    }
+                  },
+                  tooltip: _selectedReminderIds.length == _todayReminders.length
+                      ? 'Deseleccionar todo'
+                      : 'Seleccionar todo',
                 ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AjustesScreen()),
-              );
-            },
-          ),
-        ],
+                // Botón completar seleccionados
+                IconButton(
+                  icon: Icon(Icons.check_circle, color: Colors.green),
+                  onPressed: _selectedReminderIds.isEmpty
+                      ? null
+                      : _completeMultipleReminders,
+                  tooltip: 'Completar seleccionados',
+                ),
+                // Botón cancelar
+                IconButton(
+                  icon: Icon(Icons.close, color: Colors.white),
+                  onPressed: _cancelMultiSelect,
+                  tooltip: 'Cancelar',
+                ),
+              ]
+            : [
+                Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+                        );
+                      },
+                    ),
+                    if (pendingCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            '$pendingCount',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined, color: Colors.white),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AjustesScreen()),
+                    );
+                  },
+                ),
+              ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -810,29 +952,44 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
 
   Widget _buildReminderCard(Reminder reminder) {
     final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+    final isSelected = _selectedReminderIds.contains(reminder.id);
     
     return GestureDetector(
       onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
-          ),
-        );
-        _loadUserData(); // Recargar después de ver detalles
+        if (_isMultiSelectMode) {
+          // En modo selección, alternar selección
+          _toggleSelection(reminder.id);
+        } else {
+          // Navegación normal
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
+            ),
+          );
+          _loadUserData(); // Recargar después de ver detalles
+        }
+      },
+      onLongPress: () {
+        if (!_isMultiSelectMode) {
+          // Iniciar modo selección múltiple
+          _startMultiSelect(reminder.id);
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
+            color: isSelected
+                ? Colors.blue
+                : isPast 
+                    ? Colors.red.withOpacity(0.3) 
+                    : reminder.isCompleted 
+                        ? Colors.green.withOpacity(0.3)
+                        : Colors.transparent,
+            width: isSelected || isPast || reminder.isCompleted ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -848,6 +1005,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
+                  // Checkbox para selección múltiple
+                  if (_isMultiSelectMode) ...[
+                    Checkbox(
+                      value: isSelected,
+                      onChanged: (value) => _toggleSelection(reminder.id),
+                      activeColor: Colors.blue,
+                      shape: CircleBorder(),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   // Icono del tipo
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -953,48 +1120,50 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     ),
                   ),
 
-                  // Botón de acción
-                  const SizedBox(width: 8),
-                  if (!reminder.isCompleted)
-                    ElevatedButton(
-                      onPressed: () => _marcarComoCompletado(reminder),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        elevation: 2,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check, size: 18),
-                          SizedBox(width: 4),
-                          Text(
-                            'Confirmar',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
+                  // Botón de acción (oculto en modo selección múltiple)
+                  if (!_isMultiSelectMode) ...[
+                    const SizedBox(width: 8),
+                    if (!reminder.isCompleted)
+                      ElevatedButton(
+                        onPressed: () => _marcarComoCompletado(reminder),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ],
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          elevation: 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check, size: 18),
+                            SizedBox(width: 4),
+                            Text(
+                              'Confirmar',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 32,
+                        ),
                       ),
-                    )
-                  else
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                        size: 32,
-                      ),
-                    ),
+                  ],
                 ],
               ),
             ),

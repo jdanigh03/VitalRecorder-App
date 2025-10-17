@@ -81,13 +81,11 @@ class CalendarService {
       if (userId == null) return {};
 
       final dateKey = _getDateKey(date);
-      final startOfDay = _getStartOfDay(date);
-      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
-
+      
+      // Consulta más simple usando solo userId y dateKey
       final snapshot = await _completionsCollection
           .where('userId', isEqualTo: userId)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+          .where('dateKey', isEqualTo: dateKey)
           .get();
 
       return snapshot.docs.map((doc) {
@@ -190,9 +188,9 @@ class CalendarService {
       print('=== DEBUG COMPLETACIONES ===');
       print('Usuario ID: $userId');
 
+      // Consulta simple sin orderBy para evitar índices
       final snapshot = await _completionsCollection
           .where('userId', isEqualTo: userId)
-          .orderBy('date', descending: true)
           .get();
 
       print('Total completaciones encontradas: ${snapshot.docs.length}');

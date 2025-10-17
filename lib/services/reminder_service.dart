@@ -368,6 +368,8 @@ class ReminderService {
 
   // Función de emergencia: obtener TODOS los recordatorios sin filtrar por isActive
   // Usar solo temporalmente hasta que se complete la migración
+  // Función de emergencia: obtener TODOS los recordatorios sin filtrar por isActive
+  // Usar solo temporalmente hasta que se complete la migración
   Future<List<Reminder>> getAllRemindersEmergency() async {
     try {
       final userId = _currentUserId;
