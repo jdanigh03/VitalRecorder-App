@@ -61,8 +61,8 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.delete, color: Colors.white),
-            onPressed: () => _showDeleteDialog(),
+            icon: const Icon(Icons.archive, color: Colors.white),
+            onPressed: () => _showArchiveDialog(),
           ),
         ],
       ),
@@ -327,6 +327,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
   }
 
   String _getStatusText(Reminder reminder) {
+    if (!reminder.isActive) return 'ARCHIVADO';
     if (reminder.isCompleted) {
       return 'COMPLETADO';
     } else if (reminder.dateTime.isBefore(DateTime.now())) {
@@ -337,6 +338,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
   }
 
   IconData _getStatusIcon(Reminder reminder) {
+    if (!reminder.isActive) return Icons.archive;
     if (reminder.isCompleted) {
       return Icons.check_circle;
     } else if (reminder.dateTime.isBefore(DateTime.now())) {
@@ -347,6 +349,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
   }
 
   Color _getStatusColor(Reminder reminder) {
+    if (!reminder.isActive) return Colors.grey;
     if (reminder.isCompleted) {
       return Colors.green;
     } else if (reminder.dateTime.isBefore(DateTime.now())) {
@@ -455,7 +458,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
     }
   }
 
-  void _showDeleteDialog() {
+  void _showArchiveDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -464,19 +467,19 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
         ),
         title: const Row(
           children: [
-            Icon(Icons.delete_outline, color: Colors.red),
+            Icon(Icons.archive_outlined, color: Colors.blueGrey),
             SizedBox(width: 8),
-            Text('Eliminar Recordatorio'),
+            Text('Archivar Recordatorio'),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('¿Estás seguro de que deseas eliminar "${_currentReminder.title}"?'),
+            Text('¿Estás seguro de que deseas archivar "${_currentReminder.title}"?'),
             const SizedBox(height: 8),
             const Text(
-              'Esta acción no se puede deshacer.',
+              'El recordatorio ya no aparecerá en la lista principal.',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey,
@@ -492,43 +495,49 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _deleteReminder();
+              _deactivateReminder();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: Colors.blueGrey,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
+            child: const Text('Archivar', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _deleteReminder() async {
+  Future<void> _deactivateReminder() async {
     setState(() => _isLoading = true);
     
     try {
-      final success = await _reminderService.deleteReminder(_currentReminder.id);
+      final success = await _reminderService.deactivateReminder(_currentReminder.id);
       
       if (success) {
         if (mounted) {
-          Navigator.pop(context, 'deleted');
+          // Actualizar el estado local para reflejar el cambio
+          setState(() {
+            _currentReminder = _currentReminder.copyWith(isActive: false);
+            _isLoading = false;
+          });
+
+          Navigator.pop(context, _currentReminder); // Devolver el recordatorio actualizado
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.delete, color: Colors.white),
+                  const Icon(Icons.archive, color: Colors.white),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('${_currentReminder.title} eliminado'),
+                    child: Text('${_currentReminder.title} archivado'),
                   ),
                 ],
               ),
-              backgroundColor: Colors.red,
+              backgroundColor: Colors.blueGrey,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -537,7 +546,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
           );
         }
       } else {
-        throw Exception('No se pudo eliminar el recordatorio');
+        throw Exception('No se pudo archivar el recordatorio');
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -550,7 +559,7 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Error al eliminar: $e'),
+                  child: Text('Error al archivar: $e'),
                 ),
               ],
             ),

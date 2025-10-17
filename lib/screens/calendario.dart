@@ -475,13 +475,15 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     
     return GestureDetector(
       onTap: () async {
-        await Navigator.push(
+        final result = await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
           ),
         );
-        _loadReminders(); // Recargar después de ver detalles
+        if (result != null) {
+          _loadReminders(); // Recargar después de ver detalles
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),

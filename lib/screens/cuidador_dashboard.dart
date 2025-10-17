@@ -13,6 +13,7 @@ import 'cuidador_pacientes_recordatorios.dart';
 import 'invitaciones_cuidador.dart';
 import 'ajustes.dart';
 import 'auth_wrapper.dart';
+import '../widgets/global_reminder_indicator.dart';
 
 class CuidadorDashboard extends StatefulWidget {
   const CuidadorDashboard({Key? key}) : super(key: key);
@@ -153,6 +154,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       
       // Ordenar por hora
       _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      
+      // Eliminar duplicados
+      _todayReminders = _todayReminders.toSet().toList();
       
       print('=== RECORDATORIOS DE PACIENTES HOY ===');
       print('Total recordatorios hoy: ${_todayReminders.length}');
@@ -509,6 +513,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ],
                 ),
               ),
+              
+              // Indicador global de recordatorio de manilla
+              GlobalReminderIndicator(),
 
               // Contenido principal
               Padding(

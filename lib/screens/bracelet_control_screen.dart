@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/bracelet_device.dart';
 import '../services/bracelet_service.dart';
+import '../services/background_ble_service_simple.dart';
 
 class BraceletControlScreen extends StatefulWidget {
   const BraceletControlScreen({Key? key}) : super(key: key);
@@ -18,11 +19,13 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
   final List<BraceletResponse> _responseLog = [];
   StreamSubscription<BraceletResponse>? _responseSubscription;
   bool _isTestingLed = false;
+  bool _isBackgroundServiceRunning = false;
 
   @override
   void initState() {
     super.initState();
     _setupResponseListener();
+    _checkBackgroundServiceStatus();
   }
 
   void _setupResponseListener() {
@@ -50,62 +53,91 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
     }
   }
 
-  Future<void> _testLedSequence() async {
-    setState(() {
-      _isTestingLed = true;
-    });
-
+  Future<void> _simulateReminderAlert() async {
     try {
-      // Secuencia de prueba: ON -> esperar -> OFF -> esperar -> ON
-      await _braceletService.turnLedOn();
-      await Future.delayed(Duration(seconds: 1));
-      await _braceletService.turnLedOff();
-      await Future.delayed(Duration(seconds: 1));
-      await _braceletService.turnLedOn();
-      await Future.delayed(Duration(seconds: 1));
-      await _braceletService.turnLedOff();
-
+      await _braceletService.simulateAlert();
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('¡Prueba de LED completada!'),
+          content: Text('Alerta de prueba enviada'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error en prueba de LED: $e'),
+          content: Text('Error enviando alerta: $e'),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      setState(() {
-        _isTestingLed = false;
-      });
     }
   }
 
-  Future<void> _simulateReminderAlert() async {
+  Future<void> _syncReminders() async {
     try {
-      final notification = BraceletNotification(
-        type: BraceletNotificationType.medicationTime,
-        title: 'Prueba de Recordatorio',
-        message: 'Simulación de notificación',
-        scheduledTime: DateTime.now(),
-      );
-      
-      await _braceletService.sendReminderNotification(notification);
-      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Notificación de prueba enviada'),
+          content: Text('Sincronizando recordatorios...'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+      
+      await _braceletService.syncRemindersToBracelet();
+      
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('¡Recordatorios sincronizados con éxito!'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error enviando notificación: $e'),
+          content: Text('Error al sincronizar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  
+  Future<void> _checkBackgroundServiceStatus() async {
+    try {
+      final isRunning = await BackgroundBleService.isServiceRunning();
+      setState(() {
+        _isBackgroundServiceRunning = isRunning;
+      });
+    } catch (e) {
+      print('Error verificando estado del servicio: $e');
+    }
+  }
+  
+  Future<void> _toggleBackgroundService(bool enable) async {
+    try {
+      if (enable) {
+        await BackgroundBleService.startService();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Servicio en segundo plano iniciado'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        await BackgroundBleService.stopService();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Servicio en segundo plano detenido'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      
+      await _checkBackgroundServiceStatus();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error con servicio en segundo plano: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -318,25 +350,59 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
             ),
           ],
           
-          // Estado del LED
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Icon(
-                device.isLedOn ? Icons.lightbulb : Icons.lightbulb_outline,
-                color: device.isLedOn ? Colors.amber : Colors.grey,
-                size: 20,
+          // Estado del recordatorio activo
+          if (_braceletService.hasActiveReminder) ...[
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
               ),
-              SizedBox(width: 8),
-              Text(
-                'LED: ${device.isLedOn ? "Encendido" : "Apagado"}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF1E3A5F),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.alarm, size: 16, color: Colors.orange[700]),
+                      SizedBox(width: 8),
+                      Text(
+                        'Recordatorio Activo:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    _braceletService.activeReminderTitle ?? 'Sin título',
+                    style: TextStyle(color: Colors.orange[800]),
+                  ),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.touch_app, size: 14, color: Colors.grey[600]),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                        'Presiona el botón GPIO2 en la manilla para confirmar',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
+
         ],
       ),
     );
@@ -356,111 +422,147 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
         ),
         SizedBox(height: 16),
         
-        // Grid de controles
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.2,
-          children: [
-            _buildControlButton(
-              'LED ON',
-              Icons.lightbulb,
-              Colors.amber,
-              () => _braceletService.turnLedOn(),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _simulateReminderAlert,
+            icon: Icon(Icons.notifications_active),
+            label: Text('Simular Alerta'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(vertical: 16),
+              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            _buildControlButton(
-              'LED OFF',
-              Icons.lightbulb_outline,
-              Colors.grey,
-              () => _braceletService.turnLedOff(),
+          ),
+        ),
+
+        SizedBox(height: 12),
+        
+        // Botón de test para botón físico
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _sendCommand('READ 2'),
+            icon: Icon(Icons.touch_app),
+            label: Text('Leer Estado Botón (GPIO2)'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF28A745),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(vertical: 16),
+              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            _buildControlButton(
-              'Estado',
-              Icons.info,
-              Colors.blue,
-              () => _sendCommand(BraceletCommand.status),
+          ),
+        ),
+
+        SizedBox(height: 20),
+
+        // Botón de Sincronización
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _braceletService.isSyncing ? null : _syncReminders,
+            icon: _braceletService.isSyncing 
+                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white,))
+                : Icon(Icons.sync),
+            label: Text(_braceletService.isSyncing ? 'Sincronizando...' : 'Sincronizar Recordatorios'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF007BFF),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(vertical: 16),
+              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            _buildControlButton(
-              'Ayuda',
-              Icons.help,
-              Colors.purple,
-              () => _sendCommand(BraceletCommand.help),
-            ),
-          ],
+          ),
         ),
         
         SizedBox(height: 20),
         
-        // Botones de prueba
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isTestingLed ? null : _testLedSequence,
-                icon: _isTestingLed 
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.flash_on),
-                label: Text(_isTestingLed ? 'Probando...' : 'Probar LED'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
+        // Toggle para servicio en segundo plano
+        Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _isBackgroundServiceRunning ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _isBackgroundServiceRunning ? Colors.green.withOpacity(0.3) : Colors.grey.withOpacity(0.3),
             ),
-            SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _simulateReminderAlert,
-                icon: Icon(Icons.notifications_active),
-                label: Text('Simular Alerta'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF4A90E2),
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _isBackgroundServiceRunning ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    color: _isBackgroundServiceRunning ? Colors.green[700] : Colors.grey[600],
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Servicio en Segundo Plano',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E3A5F),
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          _isBackgroundServiceRunning 
+                              ? 'Activo - Escucha confirmaciones siempre'
+                              : 'Inactivo - Solo escucha con app abierta',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _isBackgroundServiceRunning,
+                    onChanged: _toggleBackgroundService,
+                    activeColor: Colors.green,
+                  ),
+                ],
               ),
-            ),
-          ],
+              if (_isBackgroundServiceRunning) ...[
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.green[700]),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Perfecto para personas mayores - funciona con teléfono en el bolsillo',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildControlButton(String title, IconData icon, Color color, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color.withOpacity(0.1),
-        foregroundColor: color,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: color.withOpacity(0.3)),
-        ),
-        elevation: 0,
-        padding: EdgeInsets.all(16),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 32),
-          SizedBox(height: 8),
-          Text(
-            title,
-            style: TextStyle(fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildResponseLogSection() {
     return Column(

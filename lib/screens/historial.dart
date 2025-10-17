@@ -118,8 +118,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<List<Reminder>>(
-              stream: _reminderService.getRemindersStream(),
+            child: FutureBuilder<List<Reminder>>(
+              future: _reminderService.getReminderHistory(), // Usar el nuevo método para el historial
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Center(
@@ -197,13 +197,13 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           SizedBox(height: 16),
                           ElevatedButton.icon(
                             onPressed: () async {
-                              final result = await Navigator.push(
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => AgregarRecordatorioScreen(),
                                 ),
                               );
-                              // No necesitamos hacer nada aquí, StreamBuilder se actualizará automáticamente
+                              setState(() {}); // Forzar recarga del FutureBuilder
                             },
                             icon: Icon(Icons.add),
                             label: Text('Agregar Recordatorio'),
@@ -233,13 +233,13 @@ class _HistorialScreenState extends State<HistorialScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final result = await Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => AgregarRecordatorioScreen(),
             ),
           );
-          // StreamBuilder se actualizará automáticamente
+          setState(() {}); // Forzar recarga del FutureBuilder
         },
         backgroundColor: Color(0xFF4A90E2),
         child: Icon(Icons.add, color: Colors.white),

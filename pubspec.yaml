@@ -29,6 +29,8 @@ dependencies:
   # Bluetooth para manilla
   flutter_blue_plus: ^1.32.7
   permission_handler: ^11.3.1
+  
+  # Servicio en segundo plano (removido por conflictos)
 
   cupertino_icons: ^1.0.8
 

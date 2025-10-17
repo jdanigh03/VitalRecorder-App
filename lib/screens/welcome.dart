@@ -116,11 +116,22 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
 
   Future<void> _loadTodayReminders() async {
     try {
+      // Debug: Verificar todos los recordatorios en Firestore
+      await _reminderService.debugReminders();
+      
+      // Migrar recordatorios antiguos sin campo isActive
+      final migratedCount = await _reminderService.migrateOldReminders();
+      if (migratedCount > 0) {
+        print('Se migraron $migratedCount recordatorios. Recargando datos...');
+      }
+      
       final now = DateTime.now();
       final startOfDay = DateTime(now.year, now.month, now.day);
       final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
       
-      final allReminders = await _reminderService.getRemindersForDateRange(startOfDay, endOfDay);
+      // Usar getAllReminders (ahora sin orderBy, no requiere índice)
+      final allReminders = await _reminderService.getAllReminders();
+      print('Recordatorios obtenidos: ${allReminders.length}');
       
       // Filtrar recordatorios de hoy y ordenar por hora
       _todayReminders = allReminders.where((r) {
@@ -555,13 +566,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => const AgregarRecordatorioScreen(),
             ),
           );
+          _loadUserData(); // Recargar después de agregar
         },
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.add, color: Colors.white),
@@ -757,13 +769,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
     
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
           ),
         );
+        _loadUserData(); // Recargar después de ver detalles
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),

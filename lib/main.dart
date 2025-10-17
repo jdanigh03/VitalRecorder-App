@@ -15,6 +15,8 @@ import 'screens/bracelet_setup_screen.dart';
 import 'screens/bracelet_control_screen.dart';
 
 import 'package:vital_recorder_app/services/notification_service.dart';
+import 'package:vital_recorder_app/services/background_ble_service_simple.dart';
+import 'package:vital_recorder_app/services/bracelet_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +31,23 @@ Future<void> main() async {
   // Inicializar el servicio de notificaciones
   final NotificationService notificationService = NotificationService();
   await notificationService.initNotifications();
+  
+  // Inicializar servicio BLE en segundo plano
+  try {
+    await BackgroundBleService.initialize();
+    print('Servicio BLE en segundo plano inicializado');
+  } catch (e) {
+    print('Error inicializando servicio BLE: $e');
+  }
+  
+  // Inicializar BraceletService global (escucha BLE desde toda la app)
+  try {
+    final braceletService = BraceletService();
+    await braceletService.initialize();
+    print('BraceletService global inicializado');
+  } catch (e) {
+    print('Error inicializando BraceletService: $e');
+  }
 
   runApp(const MyApp());
 }

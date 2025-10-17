@@ -7,6 +7,7 @@ class Reminder {
   final bool isCompleted;
   final String type;
   final String? userId; // ID del usuario/paciente al que pertenece
+  final bool isActive; // Para borrado lógico
 
   Reminder({
     required this.id,
@@ -17,6 +18,7 @@ class Reminder {
     this.isCompleted = false,
     this.type = 'medication',
     this.userId,
+    this.isActive = true, // Por defecto, los recordatorios están activos
   });
 
   Reminder copyWith({
@@ -28,6 +30,7 @@ class Reminder {
     bool? isCompleted,
     String? type,
     String? userId,
+    bool? isActive,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -38,10 +41,10 @@ class Reminder {
       isCompleted: isCompleted ?? this.isCompleted,
       type: type ?? this.type,
       userId: userId ?? this.userId,
+      isActive: isActive ?? this.isActive,
     );
   }
 
-  // Conversión a Firestore
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -52,10 +55,10 @@ class Reminder {
       'isCompleted': isCompleted,
       'type': type,
       'userId': userId,
+      'isActive': isActive,
     };
   }
 
-  // Desde Firestore
   factory Reminder.fromMap(Map<String, dynamic> map) {
     return Reminder(
       id: map['id'] ?? '',
@@ -66,6 +69,16 @@ class Reminder {
       isCompleted: map['isCompleted'] ?? false,
       type: map['type'] ?? 'medication',
       userId: map['userId'],
+      isActive: map['isActive'] ?? true,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Reminder && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }

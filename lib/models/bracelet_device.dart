@@ -108,13 +108,39 @@ enum BraceletConnectionStatus {
 
 // Comandos disponibles para la manilla
 class BraceletCommand {
-  static const String ledOn = "LED ON";
-  static const String ledOff = "LED OFF";
-  static const String status = "STATUS";
-  static const String help = "HELP";
+  static const String ledOn = 'LED ON';
+  static const String ledOff = 'LED OFF';
+  static const String status = 'STATUS';
+  static const String help = 'HELP';
+  static String pinControl(int pin, bool state) => 'PIN $pin ${state ? 1 : 0}';
+  static String readPin(int pin) => 'READ $pin';
+
+  // Comandos de Sincronización
+  static String syncTime() {
+    // Obtener la hora local y ajustar el timestamp
+    final now = DateTime.now();
+    final utcNow = now.toUtc();
+    final offsetInSeconds = now.timeZoneOffset.inSeconds;
+    
+    // Crear timestamp que cuando se interprete como UTC en el Arduino,
+    // muestre la hora local correcta
+    final localTimestamp = (utcNow.millisecondsSinceEpoch ~/ 1000) + offsetInSeconds;
+    return 'SYNC_TIME $localTimestamp';
+  }
+  static const String clearReminders = 'REM_CLEAR';
+  static String addReminder(int hour, int minute, String title) {
+    // Escapar comillas en el título si es necesario y truncar
+    String safeTitle = title.replaceAll('"', '\'');
+    if (safeTitle.length > 19) {
+      safeTitle = safeTitle.substring(0, 19);
+    }
+    return 'REM_ADD $hour:$minute "$safeTitle"';
+  }
+  static String completeReminder(int index) => 'REM_COMPLETE $index';
   
-  static String pinControl(int pin, bool state) => "PIN $pin ${state ? 1 : 0}";
-  static String readPin(int pin) => "READ $pin";
+  // Comandos de respuesta del Arduino
+  static const String reminderCompletedByButton = 'REMINDER_COMPLETED_BY_BUTTON';
+  static const String reminderActivated = 'REMINDER_ACTIVATED';
 }
 
 // Respuestas típicas de la manilla
