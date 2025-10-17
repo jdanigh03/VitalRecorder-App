@@ -6,6 +6,7 @@ import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/cuidador_service.dart';
 import '../services/invitacion_service.dart';
+import '../services/reminder_service.dart';
 import 'cuidador_pacientes_screen.dart';
 import 'cuidador_recordatorios_screen.dart';
 import 'cuidador_reportes_screen.dart';
@@ -32,6 +33,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   final CuidadorService _cuidadorService = CuidadorService();
   final UserService _userService = UserService();
   final InvitacionService _invitacionService = InvitacionService();
+  final ReminderService _reminderService = ReminderService();
   
   // Datos
   UserModel? _currentUserData;
@@ -120,8 +122,8 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       print('Email: $userEmail');
       print('Nombre: $_cuidadorName');
       
-      // Cargar recordatorios de hoy de pacientes asignados
-      await _loadTodayRemindersFromPatients();
+      // Cargar recordatorios relevantes de pacientes asignados
+      await _loadRelevantRemindersFromPatients();
       
       // Cargar invitaciones pendientes
       await _loadInvitacionesPendientes();
@@ -139,32 +141,55 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     }
   }
 
-  Future<void> _loadTodayRemindersFromPatients() async {
+  Future<void> _loadRelevantRemindersFromPatients() async {
     try {
-      // Obtener recordatorios de hoy de todos los pacientes asignados
-      final todayReminders = await _cuidadorService.getTodayRemindersFromAllPatients();
+      print('=== CARGANDO RECORDATORIOS ===');
       
-      // Filtrar recordatorios de hoy y ordenar por hora
-      final now = DateTime.now();
-      _todayReminders = todayReminders.where((r) {
-        return r.dateTime.day == now.day &&
-            r.dateTime.month == now.month &&
-            r.dateTime.year == now.year;
-      }).toList();
+      // Verificar si el usuario actual tiene pacientes asignados
+      final pacientesAsignados = await _cuidadorService.getPacientes();
+      
+      List<Reminder> relevantReminders = [];
+      
+      if (pacientesAsignados.isNotEmpty) {
+        // Si es cuidador: obtener recordatorios de pacientes asignados
+        print('Usuario es CUIDADOR - Cargando recordatorios de ${pacientesAsignados.length} pacientes');
+        relevantReminders = await _cuidadorService.getTodayRemindersFromAllPatients();
+      } else {
+        // Si es paciente: obtener sus propios recordatorios
+        print('Usuario es PACIENTE - Cargando recordatorios propios');
+        final allReminders = await _reminderService.getAllReminders();
+        
+        // Filtrar recordatorios relevantes (hoy + pendientes de días anteriores)
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        
+        relevantReminders = allReminders.where((r) {
+          final reminderDate = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
+          final isToday = reminderDate.isAtSameMomentAs(today);
+          final isPastButActive = reminderDate.isBefore(today) && r.isActive && !r.isCompleted;
+          return isToday || isPastButActive;
+        }).toList();
+        
+        print('=== DEBUG FILTRO PACIENTE ===');
+        print('Total recordatorios en BD: ${allReminders.length}');
+        print('Recordatorios relevantes filtrados: ${relevantReminders.length}');
+        for (final reminder in relevantReminders) {
+          final dateStr = '${reminder.dateTime.day}/${reminder.dateTime.month}';
+          print('✅ ${reminder.title} [$dateStr] - Activo: ${reminder.isActive} - Completado: ${reminder.isCompleted}');
+        }
+      }
       
       // Ordenar por hora
-      _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      relevantReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       
       // Eliminar duplicados
-      _todayReminders = _todayReminders.toSet().toList();
+      _todayReminders = relevantReminders.toSet().toList();
       
-      print('=== RECORDATORIOS DE PACIENTES HOY ===');
-      print('Total recordatorios hoy: ${_todayReminders.length}');
-      for (final reminder in _todayReminders) {
-        print('- ${reminder.title} a las ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
-      }
+      print('=== RESULTADO FINAL ===');
+      print('Total recordatorios mostrados: ${_todayReminders.length}');
+      
     } catch (e) {
-      print('Error cargando recordatorios de pacientes: $e');
+      print('Error cargando recordatorios: $e');
       _todayReminders = [];
     }
   }
@@ -475,10 +500,10 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     const SizedBox(height: 8),
                     Text(
                       todayReminders.isEmpty
-                          ? 'No hay recordatorios de pacientes hoy'
+                          ? 'No hay recordatorios pendientes'
                           : pendingCount == 0
                               ? '¡Todos los recordatorios completados!'
-                              : 'Pacientes: $pendingCount ${pendingCount == 1 ? 'recordatorio' : 'recordatorios'}',
+                              : 'Pacientes: $pendingCount ${pendingCount == 1 ? 'pendiente' : 'pendientes'}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -537,7 +562,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                               SizedBox(width: 8),
                               Flexible(
                                 child: Text(
-                                  'Recordatorios de Pacientes',
+                                  'Recordatorios Pendientes',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,

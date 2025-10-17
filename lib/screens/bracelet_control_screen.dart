@@ -6,6 +6,7 @@ import 'dart:async';
 import '../models/bracelet_device.dart';
 import '../services/bracelet_service.dart';
 import '../services/background_ble_service_simple.dart';
+import '../services/bracelet_storage_service.dart';
 
 class BraceletControlScreen extends StatefulWidget {
   const BraceletControlScreen({Key? key}) : super(key: key);
@@ -20,12 +21,14 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
   StreamSubscription<BraceletResponse>? _responseSubscription;
   bool _isTestingLed = false;
   bool _isBackgroundServiceRunning = false;
+  Map<String, dynamic> _reconnectionStats = {};
 
   @override
   void initState() {
     super.initState();
     _setupResponseListener();
     _checkBackgroundServiceStatus();
+    _loadReconnectionStats();
   }
 
   void _setupResponseListener() {
@@ -141,6 +144,17 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+  
+  Future<void> _loadReconnectionStats() async {
+    try {
+      final stats = await BraceletStorageService.getStorageStats();
+      setState(() {
+        _reconnectionStats = stats;
+      });
+    } catch (e) {
+      print('Error cargando estadísticas de reconexión: $e');
     }
   }
 
@@ -400,6 +414,52 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+          
+          // Información de reconexión automática
+          if (_reconnectionStats.isNotEmpty && _reconnectionStats['hasStoredBracelet'] == true) ...[
+            SizedBox(height: 16),
+            Divider(),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  _reconnectionStats['autoReconnectEnabled'] == true 
+                      ? Icons.autorenew 
+                      : Icons.sync_disabled, 
+                  size: 16, 
+                  color: _reconnectionStats['autoReconnectEnabled'] == true 
+                      ? Colors.blue[600] 
+                      : Colors.grey[600]
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reconexión Automática',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E3A5F),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        _reconnectionStats['autoReconnectEnabled'] == true 
+                            ? 'Activa - ${_reconnectionStats['reconnectAttempts'] ?? 0} intentos'
+                            : 'Desactivada',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
 

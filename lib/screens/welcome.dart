@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/reminder_service.dart';
 import '../services/bracelet_service.dart';
+import '../services/calendar_service.dart';
 import '../models/bracelet_device.dart';
 import 'agregar_recordatorio.dart';
 import 'detalle_recordatorio.dart';
@@ -34,6 +35,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   final UserService _userService = UserService();
   final ReminderService _reminderService = ReminderService();
   final BraceletService _braceletService = BraceletService();
+  final CalendarService _calendarService = CalendarService();
   
   // Datos del usuario
   UserModel? _currentUserData;
@@ -119,6 +121,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       // Debug: Verificar todos los recordatorios en Firestore
       await _reminderService.debugReminders();
       
+      // Debug: Verificar completaciones
+      await _calendarService.debugCompletions();
+      
       // Migrar recordatorios antiguos sin campo isActive
       final migratedCount = await _reminderService.migrateOldReminders();
       if (migratedCount > 0) {
@@ -126,27 +131,57 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       }
       
       final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      final today = DateTime(now.year, now.month, now.day);
       
-      // Usar getAllReminders (ahora sin orderBy, no requiere índice)
+      // Usar getAllReminders - obtiene todos los recordatorios activos
       final allReminders = await _reminderService.getAllReminders();
       print('Recordatorios obtenidos: ${allReminders.length}');
       
-      // Filtrar recordatorios de hoy y ordenar por hora
-      _todayReminders = allReminders.where((r) {
-        return r.dateTime.day == now.day &&
-            r.dateTime.month == now.month &&
-            r.dateTime.year == now.year;
-      }).toList();
+      // Obtener completaciones de hoy
+      final todayCompletions = await _calendarService.getCompletedReminderIds(today);
+      print('Completaciones de hoy: ${todayCompletions.length}');
       
-      // Ordenar por hora
+      // Filtrar recordatorios relevantes con nueva lógica
+      final filteredReminders = <Reminder>[];
+      
+      for (final reminder in allReminders) {
+        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+        
+        // Recordatorios de hoy (todos, independientemente de completación)
+        if (reminderDate.isAtSameMomentAs(today)) {
+          final isCompletedToday = todayCompletions.contains(reminder.id);
+          print('Recordatorio de hoy: ${reminder.title} - Completado hoy: $isCompletedToday');
+          filteredReminders.add(reminder);
+          continue;
+        }
+        
+        // Recordatorios de días anteriores - verificar completación en calendario
+        if (reminderDate.isBefore(today)) {
+          final isCompletedOnDate = await _calendarService.isReminderCompleted(reminder.id, reminderDate);
+          if (!isCompletedOnDate) {
+            print('Recordatorio pendiente de día anterior: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
+            filteredReminders.add(reminder);
+          } else {
+            print('Recordatorio de día anterior ya completado: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
+          }
+          continue;
+        }
+        
+        print('Recordatorio futuro excluido: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
+      }
+      
+      _todayReminders = filteredReminders;
+      
+      // Ordenar por fecha y hora
       _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       
-      print('=== RECORDATORIOS DE HOY CARGADOS ===');
-      print('Total recordatorios hoy: ${_todayReminders.length}');
+      print('=== RECORDATORIOS CARGADOS ===');
+      print('Total recordatorios relevantes: ${_todayReminders.length}');
       for (final reminder in _todayReminders) {
-        print('- ${reminder.title} a las ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
+        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+        final isFromPastDay = reminderDate.isBefore(today);
+        final status = isFromPastDay ? '(PENDIENTE)' : '';
+        print('- ${reminder.title} $status - ${reminder.dateTime.day}/${reminder.dateTime.month} ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
       }
     } catch (e) {
       print('Error cargando recordatorios: $e');
@@ -194,22 +229,27 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
 
   void _marcarComoCompletado(Reminder reminder) async {
     try {
-      // Actualizar en Firebase
-      final success = await _reminderService.markAsCompleted(reminder.id, true);
+      final now = DateTime.now();
+      final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+      final today = DateTime(now.year, now.month, now.day);
+      
+      // Determinar para qué fecha marcar como completado
+      // Si es un recordatorio de día anterior, marcarlo para su fecha original
+      // Si es de hoy, marcarlo para hoy
+      final completionDate = reminderDate.isBefore(today) ? reminderDate : today;
+      
+      // Marcar como completado en el calendario para la fecha específica
+      final success = await _calendarService.markReminderCompleted(reminder.id, completionDate);
       
       if (success) {
-        // Actualizar estado local
-        setState(() {
-          final index = _todayReminders.indexWhere((r) => r.id == reminder.id);
-          if (index != -1) {
-            _todayReminders[index] = reminder.copyWith(isCompleted: true);
-          }
-        });
+        // Recargar la lista de recordatorios para reflejar cambios
+        await _loadTodayReminders();
+        setState(() {});
         
         // Enviar notificación a la manilla si está conectada
         _sendBraceletNotification(reminder);
       } else {
-        throw Exception('No se pudo actualizar en Firebase');
+        throw Exception('No se pudo marcar como completado en el calendario');
       }
     } catch (e) {
       print('Error marcando recordatorio como completado: $e');
@@ -298,8 +338,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     // Usar _todayReminders que ya viene filtrado y ordenado desde Firebase
     final todayReminders = _todayReminders;
 
-    final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
-    final completedCount = todayReminders.where((r) => r.isCompleted).length;
+    // Los contadores se calculan diferente ahora:
+    // - Pendientes: recordatorios que aparecen en la lista (ya filtrados para mostrar solo no completados)
+    // - Completados: no los mostramos en la lista, pero podrían estar completados hoy
+    final pendingCount = todayReminders.length; // Todos los que aparecen son pendientes
+    final completedCount = 0; // No mostramos completados en esta vista
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),

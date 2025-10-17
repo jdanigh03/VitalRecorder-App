@@ -10,6 +10,7 @@ import '../models/bracelet_device.dart';
 import '../models/reminder.dart';
 import 'reminder_service.dart';
 import 'background_ble_service_simple.dart';
+import 'bracelet_storage_service.dart';
 
 class BraceletService extends ChangeNotifier {
   static final BraceletService _instance = BraceletService._internal();
@@ -34,6 +35,11 @@ class BraceletService extends ChangeNotifier {
   final List<BluetoothDevice> _discoveredDevices = [];
   bool _isScanning = false;
   bool _isSyncing = false;
+  
+  // Sistema de reconexión automática
+  Timer? _reconnectionTimer;
+  bool _isAttemptingReconnection = false;
+  BraceletDevice? _savedBracelet;
   
   // Estado de recordatorios activos en la manilla
   int? _activeReminderIndex;
@@ -150,6 +156,9 @@ class BraceletService extends ChangeNotifier {
         print("Bluetooth está desactivado");
         return false;
       }
+      
+      // Cargar manilla guardada y comenzar reconexión automática
+      await _loadSavedBraceletAndStartReconnection();
 
       print("BraceletService inicializado correctamente");
       return true;
@@ -312,6 +321,13 @@ class BraceletService extends ChangeNotifier {
       // Enviar comando inicial para verificar conexión
       await sendCommand(BraceletCommand.status);
       
+      // Guardar información de la manilla para reconexión automática
+      await BraceletStorageService.saveLastConnectedBracelet(_connectedDevice!);
+      await BraceletStorageService.resetReconnectAttempts();
+      
+      // Detener sistema de reconexión ya que estamos conectados
+      stopReconnection();
+      
       print("Conectado exitosamente a la manilla");
       return true;
 
@@ -339,6 +355,15 @@ class BraceletService extends ChangeNotifier {
       _bluetoothDevice = null;
       _rxCharacteristic = null;
       _txCharacteristic = null;
+      
+      // Reiniciar sistema de reconexión automática si hay manilla guardada
+      if (_savedBracelet != null) {
+        final shouldReconnect = await BraceletStorageService.shouldAutoReconnect();
+        if (shouldReconnect) {
+          print('[RECONNECT] ♾️ Desconectado - reiniciando sistema de reconexión...');
+          _startReconnectionLoop();
+        }
+      }
       
       notifyListeners();
       print("Desconectado de la manilla");
@@ -788,8 +813,227 @@ class BraceletService extends ChangeNotifier {
     });
   }
   
+  /// Cargar manilla guardada e iniciar sistema de reconexión
+  Future<void> _loadSavedBraceletAndStartReconnection() async {
+    try {
+      _savedBracelet = await BraceletStorageService.getLastConnectedBracelet();
+      
+      if (_savedBracelet != null) {
+        print('[RECONNECT] 🔄 Manilla guardada encontrada: ${_savedBracelet!.name}');
+        
+        final shouldReconnect = await BraceletStorageService.shouldAutoReconnect();
+        if (shouldReconnect) {
+          print('[RECONNECT] ⚙️ Iniciando sistema de reconexión automática...');
+          _startReconnectionLoop();
+        }
+      } else {
+        print('[RECONNECT] ℹ️ No hay manilla guardada');
+      }
+    } catch (e) {
+      print('[RECONNECT] ❌ Error cargando manilla guardada: $e');
+    }
+  }
+  
+  /// Iniciar bucle de reconexión automática
+  void _startReconnectionLoop() {
+    // Cancelar timer existente
+    _reconnectionTimer?.cancel();
+    
+    // Iniciar nuevo timer que verifica cada 30 segundos
+    _reconnectionTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      await _attemptAutoReconnection();
+    });
+    
+    // Intentar reconexión inmediata
+    _attemptAutoReconnection();
+  }
+  
+  /// Intentar reconexión automática
+  Future<void> _attemptAutoReconnection() async {
+    // No intentar si ya está conectado o ya está intentando
+    if (isConnected || _isAttemptingReconnection || _savedBracelet == null) {
+      return;
+    }
+    
+    try {
+      _isAttemptingReconnection = true;
+      await BraceletStorageService.incrementReconnectAttempts();
+      
+      final attempts = await BraceletStorageService.getReconnectAttempts();
+      print('[RECONNECT] 🔍 Intento de reconexión #$attempts para ${_savedBracelet!.name}');
+      
+      // Límite de intentos (por ejemplo, 100 intentos = ~50 minutos)
+      if (attempts > 100) {
+        print('[RECONNECT] ⚠️ Límite de intentos alcanzado, pausando reconexión');
+        _reconnectionTimer?.cancel();
+        return;
+      }
+      
+      // Buscar dispositivos BLE
+      print('[RECONNECT] 🔎 Escaneando dispositivos BLE...');
+      await _scanForSavedBracelet();
+      
+    } catch (e) {
+      print('[RECONNECT] ❌ Error en reconexión automática: $e');
+    } finally {
+      _isAttemptingReconnection = false;
+    }
+  }
+  
+  /// Escanear específicamente por la manilla guardada
+  Future<void> _scanForSavedBracelet() async {
+    if (_savedBracelet == null) return;
+    
+    try {
+      // Escaneo rápido de 10 segundos
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 10),
+        androidUsesFineLocation: true,
+      );
+      
+      // Buscar en resultados usando listen
+      final results = <ScanResult>[];
+      
+      // Escuchar resultados del escaneo
+      final subscription = FlutterBluePlus.scanResults.listen((scanResults) {
+        results.addAll(scanResults);
+      });
+      
+      // Esperar un poco para que se complete el escaneo
+      await Future.delayed(const Duration(seconds: 2));
+      subscription.cancel();
+      
+      for (final result in results) {
+        final device = result.device;
+        final name = device.platformName.isNotEmpty ? device.platformName : 'Dispositivo desconocido';
+        
+        // Verificar si coincide con la manilla guardada
+        if (_isMatchingSavedBracelet(device, name)) {
+          print('[RECONNECT] ✅ ¡Manilla encontrada! Intentando conectar...');
+          
+          // Intentar conexión
+          final success = await _connectToFoundBracelet(device);
+          
+          if (success) {
+            print('[RECONNECT] 🎆 ¡Reconexión exitosa!');
+            await BraceletStorageService.resetReconnectAttempts();
+            _reconnectionTimer?.cancel();
+            return;
+          }
+        }
+      }
+      
+      print('[RECONNECT] 🔍 Manilla no encontrada en este escaneo');
+    } catch (e) {
+      print('[RECONNECT] ❌ Error durante escaneo: $e');
+    }
+  }
+  
+  /// Verificar si un dispositivo coincide con la manilla guardada
+  bool _isMatchingSavedBracelet(BluetoothDevice device, String name) {
+    if (_savedBracelet == null) return false;
+    
+    // Verificar por MAC address (más confiable)
+    if (_savedBracelet!.macAddress.isNotEmpty && 
+        device.remoteId.toString().toLowerCase() == _savedBracelet!.macAddress.toLowerCase()) {
+      return true;
+    }
+    
+    // Verificar por nombre
+    if (name.contains('Vital Recorder') || name == _savedBracelet!.name) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /// Conectar a manilla encontrada
+  Future<bool> _connectToFoundBracelet(BluetoothDevice device) async {
+    try {
+      print('[RECONNECT] 🔗 Conectando a ${device.platformName}...');
+      
+      await device.connect(
+        timeout: const Duration(seconds: 15),
+      );
+      
+      // Actualizar estado interno
+      _bluetoothDevice = device;
+      _connectedDevice = BraceletDevice(
+        name: device.platformName.isNotEmpty ? device.platformName : _savedBracelet!.name,
+        macAddress: device.remoteId.toString(),
+        id: device.remoteId.toString(),
+        connectionStatus: BraceletConnectionStatus.connected,
+        lastConnected: DateTime.now(),
+      );
+      
+      // Configurar servicios y características
+      await _setupServicesAndCharacteristics();
+      
+      // Guardar información actualizada
+      await BraceletStorageService.saveLastConnectedBracelet(_connectedDevice!);
+      
+      notifyListeners();
+      return true;
+      
+    } catch (e) {
+      print('[RECONNECT] ❌ Error conectando: $e');
+      return false;
+    }
+  }
+  
+  /// Configurar servicios y características después de conectar
+  Future<void> _setupServicesAndCharacteristics() async {
+    if (_bluetoothDevice == null) return;
+    
+    try {
+      await _bluetoothDevice!.discoverServices();
+      final services = await _bluetoothDevice!.discoverServices();
+      
+      for (final service in services) {
+        if (service.uuid.toString().toLowerCase() == BraceletDevice.serviceUuid.toLowerCase()) {
+          final characteristics = service.characteristics;
+          
+          for (final characteristic in characteristics) {
+            final uuidStr = characteristic.uuid.toString().toLowerCase();
+            
+            if (uuidStr == '6e400002-b5a3-f393-e0a9-e50e24dcca9e') {
+              _rxCharacteristic = characteristic;
+              print('[RECONNECT] 📝 RX Characteristic configurada');
+            } else if (uuidStr == '6e400003-b5a3-f393-e0a9-e50e24dcca9e') {
+              _txCharacteristic = characteristic;
+              
+              // Configurar notificaciones
+              await _txCharacteristic!.setNotifyValue(true);
+              
+              _characteristicSubscription = _txCharacteristic!.lastValueStream.listen((data) {
+                _handleIncomingData(data);
+              });
+              
+              print('[RECONNECT] 📡 TX Characteristic configurada con notificaciones');
+            }
+          }
+          break;
+        }
+      }
+      
+      print('[RECONNECT] ⚙️ Servicios y características configurados correctamente');
+    } catch (e) {
+      print('[RECONNECT] ❌ Error configurando servicios: $e');
+      throw e;
+    }
+  }
+  
+  /// Detener sistema de reconexión automática
+  void stopReconnection() {
+    _reconnectionTimer?.cancel();
+    _reconnectionTimer = null;
+    _isAttemptingReconnection = false;
+    print('[RECONNECT] ⏹️ Sistema de reconexión detenido');
+  }
+
   @override
   void dispose() {
+    _reconnectionTimer?.cancel();
     _connectionSubscription?.cancel();
     _characteristicSubscription?.cancel();
     super.dispose();
