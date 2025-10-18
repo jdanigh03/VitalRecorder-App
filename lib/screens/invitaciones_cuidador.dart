@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/invitacion_cuidador.dart';
 import '../services/invitacion_service.dart';
+import '../services/payment_limit_service.dart';
+import 'payments/paywall_beneficios_screen.dart';
 
 class InvitacionesCuidadorScreen extends StatefulWidget {
   const InvitacionesCuidadorScreen({Key? key}) : super(key: key);
@@ -71,6 +73,18 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
     try {
       bool success;
       if (aceptar) {
+        // Limite de pacientes por cuidador: validar antes de aceptar
+        final canAccept = await PaymentLimitService().canAcceptMorePatients();
+        if (!canAccept) {
+          // Navegar al paywall para comprar cupo adicional
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const PaywallBeneficiosScreen()),
+          );
+          // Tras volver, recargar invitaciones y salir
+          await _cargarInvitaciones();
+          return;
+        }
         success = await _invitacionService.aceptarInvitacion(invitacion.id);
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(

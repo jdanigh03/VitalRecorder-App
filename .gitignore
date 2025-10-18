@@ -43,3 +43,4 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+server/vital-recorder-firebase-adminsdk-fbsvc-451108f351.json

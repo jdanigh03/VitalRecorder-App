@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/cuidador_service.dart';
+import 'payments/paywall_beneficios_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/invitacion_service.dart';
 import '../models/user.dart';
 import 'invitaciones_cuidador.dart';
@@ -16,6 +18,8 @@ class CuidadorPacientesScreen extends StatefulWidget {
 }
 
 class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
+  int _additionalSlots = 0;
+  int _defaultLimit = 2;
   final CuidadorService _cuidadorService = CuidadorService();
   final InvitacionService _invitacionService = InvitacionService();
   final TextEditingController _searchController = TextEditingController();
@@ -30,6 +34,23 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
     super.initState();
     _loadPatients();
     _loadInvitations();
+  }
+
+  Future<void> _loadLimit() async {
+    try {
+      // Lee slots del usuario actual
+      // users/{uid}.additional_patient_slots y max_patients_default
+      // Usamos CuidadorService.currentUser y Firestore directo para evitar más dependencias
+      final svc = _cuidadorService;
+      final uid = svc.currentUser?.uid;
+      if (uid == null) return;
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data() ?? {};
+      setState(() {
+        _additionalSlots = (data['additional_patient_slots'] ?? 0) as int;
+        _defaultLimit = (data['max_patients_default'] ?? 2) as int;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -120,7 +141,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '${_filteredPatients.length} pacientes asignados',
+'${_filteredPatients.length} pacientes asignados (límite ${_defaultLimit + _additionalSlots})',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -307,6 +328,33 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  'Uso: ${_filteredPatients.length} / ${_defaultLimit + _additionalSlots}',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
+                  );
+                  await _loadLimit();
+                  await _loadPatients();
+                },
+                icon: const Icon(Icons.lock_open, size: 18),
+                label: const Text('Añadir cupo'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+              ),
+            ],
           ),
 
           // Alerta de invitaciones pendientes
