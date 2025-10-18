@@ -8,6 +8,8 @@ class Reminder {
   final String type;
   final String? userId; // ID del usuario/paciente al que pertenece
   final bool isActive; // Para borrado lógico
+  final DateTime? createdAt; // Para lógica de "omitido" el mismo día de creación
+  final DateTime? updatedAt;
 
   Reminder({
     required this.id,
@@ -19,6 +21,8 @@ class Reminder {
     this.type = 'medication',
     this.userId,
     this.isActive = true, // Por defecto, los recordatorios están activos
+    this.createdAt,
+    this.updatedAt,
   });
 
   Reminder copyWith({
@@ -31,6 +35,8 @@ class Reminder {
     String? type,
     String? userId,
     bool? isActive,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -42,6 +48,8 @@ class Reminder {
       type: type ?? this.type,
       userId: userId ?? this.userId,
       isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -56,6 +64,8 @@ class Reminder {
       'type': type,
       'userId': userId,
       'isActive': isActive,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
   }
 
@@ -70,6 +80,8 @@ class Reminder {
       type: map['type'] ?? 'medication',
       userId: map['userId'],
       isActive: map['isActive'] ?? true,
+      createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt']) : null,
+      updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt']) : null,
     );
   }
 

@@ -392,6 +392,12 @@ class CuidadorService {
     if (data['dateTime'] is Timestamp) {
       data['dateTime'] = (data['dateTime'] as Timestamp).toDate().toIso8601String();
     }
+    if (data['createdAt'] is Timestamp) {
+      data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+    }
+    if (data['updatedAt'] is Timestamp) {
+      data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+    }
     return Reminder.fromMap(data);
   }
 }

@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/invitacion_service.dart';
 import '../models/invitacion_cuidador.dart';
 import '../services/user_service.dart';
+import '../services/reminder_service.dart';
+import '../services/calendar_service.dart';
+import '../services/cuidador_service.dart';
+import '../models/reminder.dart';
+import '../models/user.dart';
 import 'invitaciones_cuidador.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class NotificacionesScreen extends StatefulWidget {
   const NotificacionesScreen({Key? key}) : super(key: key);
@@ -14,10 +21,16 @@ class NotificacionesScreen extends StatefulWidget {
 class _NotificacionesScreenState extends State<NotificacionesScreen> {
   final InvitacionService _invitacionService = InvitacionService();
   final UserService _userService = UserService();
+  final ReminderService _reminderService = ReminderService();
+  final CalendarService _calendarService = CalendarService();
+  final CuidadorService _cuidadorService = CuidadorService();
   
   List<InvitacionCuidador> _invitacionesPendientes = [];
   bool _isLoadingInvitations = true;
+  bool _isLoadingNotifications = true;
   String? _userRole;
+  
+  final List<_AppNotification> _notifications = [];
 
   @override
   void initState() {
@@ -31,80 +44,49 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       final userData = await _userService.getCurrentUserData();
       _userRole = userData?.role;
       
-      // Si es cuidador, cargar invitaciones pendientes
+      // Invitaciones para cuidador
       if (_userRole == 'cuidador') {
         final invitaciones = await _invitacionService.getInvitacionesRecibidas();
-        setState(() {
-          _invitacionesPendientes = invitaciones.where((inv) => inv.esPendiente).toList();
-          _isLoadingInvitations = false;
-        });
-      } else {
-        setState(() {
-          _isLoadingInvitations = false;
-        });
+        _invitacionesPendientes = invitaciones.where((inv) => inv.esPendiente).toList();
       }
+      _isLoadingInvitations = false;
+      
+      // Cargar historial de notificaciones
+      await _loadNotifications();
+      
+      setState(() {});
     } catch (e) {
-      setState(() {
-        _isLoadingInvitations = false;
-      });
+      _isLoadingInvitations = false;
+      _isLoadingNotifications = false;
       print('Error cargando datos de notificaciones: $e');
+      setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final notifications = [
-      {
-        'title': 'Amoxicilina 1g',
-        'message': 'Es hora de tomar tu medicamento',
-        'time': '9:00 AM',
-        'isRead': false,
-        'type': 'medication',
-      },
-      {
-        'title': 'Recordatorio próximo',
-        'message': 'Ibuprofeno 400mg en 2 horas',
-        'time': '12:00 PM',
-        'isRead': true,
-        'type': 'reminder',
-      },
-      {
-        'title': 'Caminata',
-        'message': 'No olvides tu caminata de 30 minutos',
-        'time': '6:00 PM',
-        'isRead': false,
-        'type': 'activity',
-      },
-      {
-        'title': 'Medicamento omitido',
-        'message': 'No confirmaste la toma de Vitamina D',
-        'time': 'Ayer',
-        'isRead': true,
-        'type': 'warning',
-      },
-    ];
-
-    // Combinar notificaciones regulares con invitaciones
+    // Construir lista de widgets
     final List<Widget> allNotifications = [];
     
-    // Agregar invitaciones pendientes para cuidadores
+    // Invitaciones (solo cuidadores)
     if (_userRole == 'cuidador' && !_isLoadingInvitations) {
       for (final invitacion in _invitacionesPendientes) {
         allNotifications.add(_buildInvitationNotificationCard(invitacion));
       }
     }
     
-    // Agregar notificaciones regulares
-    for (int i = 0; i < notifications.length; i++) {
-      final notification = notifications[i];
-      allNotifications.add(_buildNotificationCard(
-        context,
-        notification['title'] as String,
-        notification['message'] as String,
-        notification['time'] as String,
-        notification['isRead'] as bool,
-        notification['type'] as String,
-      ));
+    // Historial dinámico
+    if (!_isLoadingNotifications) {
+      for (final n in _notifications) {
+        allNotifications.add(_buildNotificationCard(
+          context,
+          n.title,
+          n.message,
+          _formatRelativeTime(n.when),
+          n.read,
+          n.type,
+        ));
+      }
     }
 
     return Scaffold(
@@ -136,7 +118,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
           ),
         ],
       ),
-      body: _isLoadingInvitations
+      body: _isLoadingInvitations || _isLoadingNotifications
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -186,6 +168,197 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     );
   }
 
+  Future<void> _loadNotifications() async {
+    _isLoadingNotifications = true;
+    _notifications.clear();
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final sevenDaysAgo = today.subtract(const Duration(days: 7));
+
+    if (_userRole == 'cuidador') {
+      // Cuidadores: ver eventos de pacientes asignados (últimos 7 días + hoy)
+      final pacientes = await _cuidadorService.getPacientes();
+      final reminders = await _cuidadorService.getAllRemindersFromPatients();
+
+      // Agrupar recordatorios relevantes por paciente
+      final Map<String, List<Reminder>> porPaciente = {};
+      for (final r in reminders) {
+        final dOnly = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
+        if (dOnly.isBefore(sevenDaysAgo) || dOnly.isAfter(today)) continue;
+        final pid = r.userId ?? '';
+        porPaciente.putIfAbsent(pid, () => []).add(r);
+      }
+
+      for (final entry in porPaciente.entries) {
+        final pacienteId = entry.key;
+        if (pacienteId.isEmpty) continue;
+        UserModel? paciente;
+        try {
+          paciente = pacientes.firstWhere((p) => p.userId == pacienteId);
+        } catch (_) {
+          paciente = null;
+        }
+        final pacienteNombre = paciente?.persona.nombres ?? 'Paciente';
+
+        // Completados HOY para el paciente
+        final completionsHoy = await _calendarService.getCompletionsForUserInRange(pacienteId, today, today);
+        final completedToday = completionsHoy.map((c) => c['reminderId'] as String).toSet();
+
+        for (final r in entry.value) {
+          final dt = r.dateTime.toLocal();
+          final dOnly = DateTime(dt.year, dt.month, dt.day);
+
+          if (dOnly.isBefore(today)) {
+            // Días anteriores: solo marcar omitido si el recordatorio existía antes de su hora
+            final ca = r.createdAt?.toLocal();
+            if (ca != null && ca.isAfter(dt)) {
+              // Se creó después de la hora de ese día: no considerar omitido
+              continue;
+            }
+            final done = await _calendarService.isReminderCompletedForUser(pacienteId, r.id, dOnly);
+            if (!done) {
+              _notifications.add(_AppNotification(
+                type: 'warning',
+                title: '${pacienteNombre} - ${r.title}',
+                message: 'Omitido (${DateFormat('dd/MM').format(dt)})',
+                when: dt,
+              ));
+            }
+            continue;
+          }
+
+          // Hoy
+          if (dt.isAfter(now)) {
+            _notifications.add(_AppNotification(
+              type: r.type == 'medication' ? 'medication' : 'reminder',
+              title: '${pacienteNombre} - ${r.title}',
+              message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
+              when: dt,
+            ));
+          } else if (completedToday.contains(r.id)) {
+            final comp = completionsHoy.firstWhere((c) => c['reminderId'] == r.id);
+            final ts = comp['completedAt'];
+            DateTime when = dt;
+            if (ts is Timestamp) when = ts.toDate();
+            _notifications.add(_AppNotification(
+              type: 'completed',
+              title: '${pacienteNombre} - ${r.title}',
+              message: 'Completado',
+              when: when,
+            ));
+          } else {
+            // Excepción: si se creó después de la hora programada, no marcar omitido
+            final ca = r.createdAt?.toLocal();
+            final createdAfterSchedule = ca != null && ca.isAfter(dt);
+            if (createdAfterSchedule) {
+              _notifications.add(_AppNotification(
+                type: r.type == 'medication' ? 'medication' : 'reminder',
+                title: '${pacienteNombre} - ${r.title}',
+                message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
+                when: ca ?? dt,
+              ));
+            } else {
+              _notifications.add(_AppNotification(
+                type: 'warning',
+                title: '${pacienteNombre} - ${r.title}',
+                message: 'Omitido',
+                when: dt,
+              ));
+            }
+          }
+        }
+      }
+    } else {
+      // Paciente: ver sus eventos (últimos 7 días + hoy)
+      final reminders = await _reminderService.getAllReminders();
+
+      // Completados HOY
+      final completionsHoy = await _calendarService.getCompletionsForDate(today);
+      final completedToday = completionsHoy.map((c) => c['reminderId'] as String).toSet();
+
+      for (final r in reminders) {
+        final dt = r.dateTime.toLocal();
+        final dOnly = DateTime(dt.year, dt.month, dt.day);
+        if (dOnly.isBefore(sevenDaysAgo) || dOnly.isAfter(today)) continue;
+
+        if (dOnly.isBefore(today)) {
+          // Días anteriores: solo marcar omitido si existía antes
+          final ca = r.createdAt?.toLocal();
+          if (ca != null && ca.isAfter(dt)) {
+            // Creado después: no marcar omitido
+            continue;
+          }
+          final done = await _calendarService.isReminderCompleted(r.id, dOnly);
+          if (!done) {
+            _notifications.add(_AppNotification(
+              type: 'warning',
+              title: r.title,
+              message: 'Omitido (${DateFormat('dd/MM').format(dt)})',
+              when: dt,
+            ));
+          }
+          continue;
+        }
+
+        if (dt.isAfter(now)) {
+          _notifications.add(_AppNotification(
+            type: r.type == 'medication' ? 'medication' : 'reminder',
+            title: r.title,
+            message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
+            when: dt,
+          ));
+        } else if (completedToday.contains(r.id)) {
+          final comp = completionsHoy.firstWhere((c) => c['reminderId'] == r.id);
+          final ts = comp['completedAt'];
+          DateTime when = dt;
+          if (ts is Timestamp) when = ts.toDate();
+          _notifications.add(_AppNotification(
+            type: 'completed',
+            title: r.title,
+            message: 'Completado',
+            when: when,
+          ));
+        } else {
+          // Excepción: mismo día, creado después de la hora programada
+          final ca = r.createdAt?.toLocal();
+          final createdAfterSchedule = ca != null && ca.isAfter(dt);
+          if (createdAfterSchedule) {
+            _notifications.add(_AppNotification(
+              type: r.type == 'medication' ? 'medication' : 'reminder',
+              title: r.title,
+              message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
+              when: ca ?? dt,
+            ));
+          } else {
+            _notifications.add(_AppNotification(
+              type: 'warning',
+              title: r.title,
+              message: 'Omitido',
+              when: dt,
+            ));
+          }
+        }
+      }
+    }
+
+    // Ordenar por fecha descendente
+    _notifications.sort((a, b) => b.when.compareTo(a.when));
+    _isLoadingNotifications = false;
+  }
+
+  String _formatRelativeTime(DateTime when) {
+    final now = DateTime.now();
+    final diff = now.difference(when);
+    if (diff.inDays >= 1) {
+      if (diff.inDays == 1) return 'Ayer • ${DateFormat('HH:mm').format(when)}';
+      return '${DateFormat('dd/MM HH:mm').format(when)}';
+    }
+    if (diff.inHours >= 1) return 'hace ${diff.inHours} h';
+    if (diff.inMinutes >= 1) return 'hace ${diff.inMinutes} min';
+    return 'justo ahora';
+  }
+
   Widget _buildNotificationCard(
     BuildContext context,
     String title,
@@ -204,6 +377,10 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         break;
       case 'activity':
         icon = Icons.directions_run;
+        color = Colors.green;
+        break;
+      case 'completed':
+        icon = Icons.check_circle;
         color = Colors.green;
         break;
       case 'warning':
@@ -472,4 +649,20 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       return '${fecha.day}/${fecha.month}/${fecha.year}';
     }
   }
+}
+
+class _AppNotification {
+  final String type; // medication | reminder | completed | warning
+  final String title;
+  final String message;
+  final DateTime when;
+  final bool read;
+
+  _AppNotification({
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.when,
+    this.read = false,
+  });
 }

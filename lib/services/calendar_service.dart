@@ -74,27 +74,84 @@ class CalendarService {
     }
   }
 
-  /// Obtiene todas las completaciones para una fecha específica
+  /// Obtiene todas las completaciones para una fecha específica (usuario actual)
   Future<Set<String>> getCompletedReminderIds(DateTime date) async {
     try {
       final userId = _currentUserId;
       if (userId == null) return {};
+      return getCompletedReminderIdsForUser(userId, date);
+    } catch (e) {
+      print('Error obteniendo completaciones para fecha: $e');
+      return {};
+    }
+  }
 
+  /// Obtiene IDs de recordatorios completados para un usuario y fecha específica
+  Future<Set<String>> getCompletedReminderIdsForUser(String userId, DateTime date) async {
+    try {
       final dateKey = _getDateKey(date);
-      
-      // Consulta más simple usando solo userId y dateKey
       final snapshot = await _completionsCollection
           .where('userId', isEqualTo: userId)
           .where('dateKey', isEqualTo: dateKey)
           .get();
-
       return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         return data['reminderId'] as String;
       }).toSet();
     } catch (e) {
-      print('Error obteniendo completaciones para fecha: $e');
+      print('Error obteniendo completaciones (usuario específico): $e');
       return {};
+    }
+  }
+
+  /// Verifica completado para un usuario específico
+  Future<bool> isReminderCompletedForUser(String userId, String reminderId, DateTime date) async {
+    try {
+      final dateKey = _getDateKey(date);
+      final completionId = '${userId}_${reminderId}_$dateKey';
+      final doc = await _completionsCollection.doc(completionId).get();
+      return doc.exists;
+    } catch (e) {
+      print('Error verificando completación (usuario específico): $e');
+      return false;
+    }
+  }
+
+  /// Obtiene completaciones (con completedAt) para una fecha (usuario actual)
+  Future<List<Map<String, dynamic>>> getCompletionsForDate(DateTime date) async {
+    try {
+      final userId = _currentUserId;
+      if (userId == null) return [];
+      return getCompletionsForUserInRange(userId, date, date);
+    } catch (e) {
+      print('Error obteniendo completaciones para fecha: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene completaciones (con completedAt) para un usuario en un rango de fechas (inclusive)
+  Future<List<Map<String, dynamic>>> getCompletionsForUserInRange(String userId, DateTime startDate, DateTime endDate) async {
+    try {
+      final start = DateTime(startDate.year, startDate.month, startDate.day);
+      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+      final snapshot = await _completionsCollection
+          .where('userId', isEqualTo: userId)
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(end))
+          .get();
+      return snapshot.docs.map((d) {
+        final data = d.data() as Map<String, dynamic>;
+        return {
+          'id': d.id,
+          'reminderId': data['reminderId'],
+          'dateKey': data['dateKey'],
+          'completedAt': data['completedAt'],
+          'userId': data['userId'],
+        };
+      }).toList();
+    } catch (e) {
+      print('Error obteniendo completaciones (rango): $e');
+      return [];
     }
   }
 

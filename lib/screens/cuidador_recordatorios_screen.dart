@@ -80,6 +80,13 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     // Filtrar por estado
     if (_selectedStatus != 'Todos') {
       final now = DateTime.now();
+      bool isOverdue(Reminder r) {
+        final dt = r.dateTime.toLocal();
+        final ca = r.createdAt?.toLocal();
+        final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+        final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+        return !r.isCompleted && dt.isBefore(now) && !createdAfterSchedule;
+      }
       switch (_selectedStatus) {
         case 'Pendientes':
           filtered = filtered.where((r) => !r.isCompleted && r.dateTime.isAfter(now)).toList();
@@ -88,7 +95,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
           filtered = filtered.where((r) => r.isCompleted).toList();
           break;
         case 'Vencidos':
-          filtered = filtered.where((r) => !r.isCompleted && r.dateTime.isBefore(now)).toList();
+          filtered = filtered.where((r) => isOverdue(r)).toList();
           break;
       }
     }
@@ -364,7 +371,15 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   Widget _buildRecordatoriosContent() {
     final pendingCount = _allReminders.where((r) => !r.isCompleted).length;
     final completedCount = _allReminders.where((r) => r.isCompleted).length;
-    final overdueCount = _allReminders.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+    final now = DateTime.now();
+    bool isOverdue(Reminder r) {
+      final dt = r.dateTime.toLocal();
+      final ca = r.createdAt?.toLocal();
+      final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+      return !r.isCompleted && dt.isBefore(now) && !createdAfterSchedule;
+    }
+    final overdueCount = _allReminders.where(isOverdue).length;
     
     return RefreshIndicator(
       onRefresh: _loadAllReminders,
@@ -680,7 +695,12 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+    final now = DateTime.now();
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+    final isPast = dt.isBefore(now) && !reminder.isCompleted && !createdAfterSchedule;
     
     return GestureDetector(
       onTap: () {
@@ -925,7 +945,11 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   List<Reminder> _getOverdueReminders() {
     final now = DateTime.now();
     return _filteredReminders.where((reminder) {
-      return !reminder.isCompleted && reminder.dateTime.isBefore(now);
+      final dt = reminder.dateTime.toLocal();
+      final ca = reminder.createdAt?.toLocal();
+      final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+      return !reminder.isCompleted && dt.isBefore(now) && !createdAfterSchedule;
     }).toList();
   }
 

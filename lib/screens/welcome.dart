@@ -107,12 +107,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       // Cargar recordatorios de hoy
       await _loadTodayReminders();
       
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _hasInitialized = true;
       });
     } catch (e) {
       print('Error cargando datos del usuario: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _userName = 'Usuario';
@@ -196,6 +198,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   void _onItemTapped(int index) {
     if (index == _selectedIndex) return;
     
+    if (!mounted) return;
     setState(() {
       _selectedIndex = index;
     });
@@ -206,6 +209,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
           context,
           MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
         ).then((_) {
+          if (!mounted) return;
           setState(() => _selectedIndex = 0);
           _loadUserData();
         });
@@ -215,6 +219,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
           context,
           MaterialPageRoute(builder: (context) => const CalendarioScreen()),
         ).then((_) {
+          if (!mounted) return;
           setState(() => _selectedIndex = 0);
           _loadUserData();
         });
@@ -951,7 +956,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   }
 
   Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+    final now = DateTime.now();
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+    final isPast = dt.isBefore(now) && !reminder.isCompleted && !createdAfterSchedule;
     final isSelected = _selectedReminderIds.contains(reminder.id);
     
     return GestureDetector(

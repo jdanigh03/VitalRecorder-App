@@ -48,10 +48,34 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     try {
       final recordatorios = await _cuidadorService.getRecordatoriosPaciente(widget.paciente.userId!);
       final ahora = DateTime.now();
+      final hoy = DateTime(ahora.year, ahora.month, ahora.day);
       
-      final pendientes = recordatorios.where((r) => !r.isCompleted && r.dateTime.isAfter(ahora)).toList();
+      // Ajuste: para HOY ignoramos el flag isCompleted (usamos la nueva lógica por fecha)
+      final pendientes = recordatorios.where((r) {
+        final rd = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
+        final esHoy = rd.isAtSameMomentAs(hoy);
+        if (esHoy) {
+          // Para hoy: mostrar como pendiente si la hora aún no pasa
+          return r.dateTime.isAfter(ahora);
+        }
+        // Para otras fechas: mantener la lógica antigua temporalmente
+        return !r.isCompleted && r.dateTime.isAfter(ahora);
+      }).toList();
+      
       final completados = recordatorios.where((r) => r.isCompleted).toList();
-      final vencidos = recordatorios.where((r) => !r.isCompleted && r.dateTime.isBefore(ahora)).toList();
+      
+      final vencidos = recordatorios.where((r) {
+        final dt = r.dateTime.toLocal();
+        final ca = r.createdAt?.toLocal();
+        final rd = DateTime(dt.year, dt.month, dt.day);
+        final esHoy = rd.isAtSameMomentAs(hoy);
+        if (esHoy) {
+          // Para hoy: considerar vencido si la hora ya pasó, excepto si se creó después de la hora programada
+          final createdAfterSchedule = ca != null && ca.isAfter(dt);
+          return dt.isBefore(ahora) && !createdAfterSchedule;
+        }
+        return !r.isCompleted && dt.isBefore(ahora);
+      }).toList();
       
       // Ordenar recordatorios
       pendientes.sort((a, b) => a.dateTime.compareTo(b.dateTime));
@@ -437,11 +461,12 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
 
   Widget _buildRecordatorioCard(Reminder recordatorio, String tipo) {
     final ahora = DateTime.now();
-    final isVencido = !recordatorio.isCompleted && recordatorio.dateTime.isBefore(ahora);
+    final dt = recordatorio.dateTime.toLocal();
+    final ca = recordatorio.createdAt?.toLocal();
+    final isHoy = dt.day == ahora.day && dt.month == ahora.month && dt.year == ahora.year;
+    final createdAfterSchedule = isHoy && ca != null && ca.isAfter(dt);
+    final isVencido = !recordatorio.isCompleted && dt.isBefore(ahora) && !createdAfterSchedule;
     final isPendiente = !recordatorio.isCompleted && recordatorio.dateTime.isAfter(ahora);
-    final isHoy = recordatorio.dateTime.day == ahora.day && 
-                  recordatorio.dateTime.month == ahora.month && 
-                  recordatorio.dateTime.year == ahora.year;
 
     Color cardColor = Colors.white;
     Color borderColor = Colors.grey[300]!;

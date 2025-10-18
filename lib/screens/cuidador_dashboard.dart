@@ -548,32 +548,33 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                color: Color(0xFF1E3A5F),
-                                size: 24,
-                              ),
-                              SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  'Recordatorios Pendientes',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E3A5F),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              color: Color(0xFF1E3A5F),
+                              size: 24,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Recordatorios Pendientes',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E3A5F),
                                 ),
+                                maxLines: 2,
+                                softWrap: true,
+                                overflow: TextOverflow.visible,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                        SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -848,7 +849,12 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   }
 
   Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+    final now = DateTime.now();
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+    final isPast = dt.isBefore(now) && !reminder.isCompleted && !createdAfterSchedule;
     
     return GestureDetector(
       onTap: () {
