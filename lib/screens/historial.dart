@@ -6,6 +6,7 @@ import 'agregar_recordatorio.dart';
 import 'welcome.dart'; 
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
+import 'calendario.dart';
 
 class HistorialScreen extends StatefulWidget {
   const HistorialScreen({Key? key}) : super(key: key);
@@ -56,6 +57,18 @@ class _HistorialScreenState extends State<HistorialScreen> {
           'Historial de Recordatorios',
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CalendarioScreen()),
+              );
+            },
+            tooltip: 'Ver Calendario',
+          ),
+        ],
       ),
       body: Column(
         children: [

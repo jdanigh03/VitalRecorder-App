@@ -95,38 +95,126 @@ class _CalendarioScreenState extends State<CalendarioScreen>
 
   List<Reminder> _getRemindersForDay(DateTime day) {
     return _filteredReminders.where((reminder) {
-      return isSameDay(reminder.dateTime, day);
+      // Si el día es antes de la fecha de creación del recordatorio, no mostrarlo
+      final reminderDate = DateTime(
+        reminder.dateTime.year,
+        reminder.dateTime.month,
+        reminder.dateTime.day,
+      );
+      final checkDay = DateTime(day.year, day.month, day.day);
+      
+      // No mostrar recordatorios que aún no han sido creados
+      if (checkDay.isBefore(reminderDate)) {
+        return false;
+      }
+      
+      // Verificar según la frecuencia
+      switch (reminder.frequency.toLowerCase()) {
+        case 'diario':
+        case 'daily':
+        case 'cada 8 horas':
+        case 'cada 12 horas':
+        case 'every 8 hours':
+        case 'every 12 hours':
+          // Aparece todos los días desde su fecha de inicio
+          // (Para frecuencias por horas, se muestra en cada día con múltiples instancias)
+          return !checkDay.isBefore(reminderDate);
+        
+        case 'semanal':
+        case 'weekly':
+          // Aparece el mismo día de la semana cada 7 días
+          if (checkDay.isBefore(reminderDate)) return false;
+          final daysDifference = checkDay.difference(reminderDate).inDays;
+          return daysDifference % 7 == 0;
+        
+        case 'mensual':
+        case 'monthly':
+          // Aparece el mismo día del mes cada mes
+          if (checkDay.isBefore(reminderDate)) return false;
+          return checkDay.day == reminderDate.day;
+        
+        case 'personalizado':
+        case 'custom':
+          // Por ahora se comporta como diario
+          // En el futuro se podría implementar lógica personalizada
+          return !checkDay.isBefore(reminderDate);
+        
+        case 'una vez':
+        case 'once':
+        default:
+          // Solo aparece en su fecha exacta
+          return isSameDay(reminder.dateTime, day);
+      }
     }).toList()..sort((a, b) => a.dateTime.compareTo(b.dateTime));
   }
 
   Color _getReminderStatusColor(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Colors.green;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Colors.red;
-    } else {
-      return Colors.orange;
+    if (reminder.isCompleted) return Colors.green;
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    
+    if (isToday) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
+    
+    return isVencido ? Colors.red : Colors.orange;
   }
 
   IconData _getReminderStatusIcon(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Icons.check_circle;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Icons.cancel;
-    } else {
-      return Icons.access_time;
+    if (reminder.isCompleted) return Icons.check_circle;
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    
+    if (isToday) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
+    
+    return isVencido ? Icons.cancel : Icons.access_time;
   }
 
   String _getReminderStatusText(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return 'COMPLETADO';
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return 'OMITIDO';
-    } else {
-      return 'PENDIENTE';
+    if (reminder.isCompleted) return 'COMPLETADO';
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    
+    if (isToday) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
+    
+    return isVencido ? 'OMITIDO' : 'PENDIENTE';
   }
 
   IconData _getTypeIcon(String type) {

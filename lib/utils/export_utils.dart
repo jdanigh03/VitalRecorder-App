@@ -353,14 +353,25 @@ class ExportUtils {
     // Usar la lógica real para determinar vencidos (considerando createdAt)
     final missed = reminders.where((r) {
       if (r.isCompleted) return false;
+      
       final dt = r.dateTime.toLocal();
       final ca = r.createdAt?.toLocal();
       final rd = DateTime(dt.year, dt.month, dt.day);
-      if (rd.isAtSameMomentAs(today) && ca != null) {
-        final createdAfterSchedule = ca.isAfter(dt);
-        return dt.isBefore(now) && !createdAfterSchedule;
+      final isToday = rd.isAtSameMomentAs(today);
+      
+      bool isVencido = false;
+      
+      if (isToday) {
+        // Para hoy: vencido si la hora ya pasó, excepto si se creó después
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = dt.isBefore(now) && !createdAfterSchedule;
+      } else if (rd.isBefore(today)) {
+        // Para fechas pasadas: vencido solo si NO fue creado después
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = !createdAfterSchedule;
       }
-      return dt.isBefore(now);
+      
+      return isVencido;
     }).length;
     
     final pending = total - completed - missed;
@@ -380,26 +391,28 @@ class ExportUtils {
 
   /// Convierte el estado del recordatorio a texto usando lógica real
   static String _getStatusText(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return 'COMPLETADO';
-    }
+    if (reminder.isCompleted) return 'COMPLETADO';
     
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final dt = reminder.dateTime.toLocal();
     final ca = reminder.createdAt?.toLocal();
-    final today = DateTime(now.year, now.month, now.day);
-    final reminderDay = DateTime(dt.year, dt.month, dt.day);
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
     
-    if (reminderDay.isAtSameMomentAs(today) && ca != null) {
-      final createdAfterSchedule = ca.isAfter(dt);
-      if (dt.isBefore(now) && !createdAfterSchedule) {
-        return 'OMITIDO';
-      }
-    } else if (dt.isBefore(now)) {
-      return 'OMITIDO';
+    bool isVencido = false;
+    
+    if (isToday) {
+      // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
     
-    return 'PENDIENTE';
+    return isVencido ? 'OMITIDO' : 'PENDIENTE';
   }
 
   /// Convierte el tipo del recordatorio a texto
