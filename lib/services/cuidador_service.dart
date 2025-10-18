@@ -364,10 +364,29 @@ class CuidadorService {
   Future<Map<String, dynamic>> getEstadisticasPaciente(String pacienteId) async {
     try {
       final recordatorios = await getRecordatoriosPaciente(pacienteId);
+      final now = DateTime.now();
+      final hoy = DateTime(now.year, now.month, now.day);
+
       final total = recordatorios.length;
       final completados = recordatorios.where((r) => r.isCompleted).length;
-      final pendientes = recordatorios.where((r) => !r.isCompleted).length;
-      final vencidos = recordatorios.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+
+      // Pendientes: no completados y programados a futuro
+      final pendientes = recordatorios.where((r) => !r.isCompleted && r.dateTime.isAfter(now)).length;
+
+      // Vencidos con ajuste: si es hoy y se creó después de la hora programada, NO contar como vencido
+      final vencidos = recordatorios.where((r) {
+        if (r.isCompleted) return false;
+        final dt = r.dateTime.toLocal();
+        final ca = r.createdAt?.toLocal();
+        final rd = DateTime(dt.year, dt.month, dt.day);
+        final esHoy = rd.isAtSameMomentAs(hoy);
+        if (esHoy) {
+          final createdAfterSchedule = ca != null && ca.isAfter(dt);
+          return dt.isBefore(now) && !createdAfterSchedule;
+        }
+        return dt.isBefore(now);
+      }).length;
+
       final adherencia = total > 0 ? (completados / total * 100).round() : 0;
       return {
         'totalRecordatorios': total,

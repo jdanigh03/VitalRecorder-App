@@ -21,6 +21,24 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   List<UserModel> _pacientes = [];
   List<Reminder> _reminders = [];
 
+  bool _isOverdue(Reminder r, DateTime now) {
+    final dt = r.dateTime.toLocal();
+    final ca = r.createdAt?.toLocal();
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final today = DateTime(now.year, now.month, now.day);
+    if (r.isCompleted) return false;
+    if (day.isAtSameMomentAs(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      return dt.isBefore(now) && !createdAfterSchedule;
+    }
+    return dt.isBefore(now);
+  }
+
+  bool _isPending(Reminder r, DateTime now) {
+    if (r.isCompleted) return false;
+    return r.dateTime.isAfter(now);
+  }
+
   DateTime _startDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _endDate = DateTime.now();
 
@@ -617,20 +635,27 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildPatientRanking() {
-    // Calcular adherencia real para cada paciente
+    // Calcular adherencia real para cada paciente (filtrando por período y vencimientos reales)
     List<Map<String, dynamic>> pacientesConAdherencia = [];
+    final now = DateTime.now();
+    final periodStart = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final periodEnd = DateTime(_endDate.year, _endDate.month, _endDate.day, 23, 59, 59);
     
     for (final paciente in _pacientes) {
-      // Obtener recordatorios del paciente específico
+      // Recordatorios del paciente en el período seleccionado
       final recordatoriosPaciente = _reminders.where((r) => 
-        r.userId == paciente.userId
+        r.userId == paciente.userId &&
+        r.dateTime.isAfter(periodStart.subtract(Duration(seconds: 1))) &&
+        r.dateTime.isBefore(periodEnd.add(Duration(seconds: 1)))
       ).toList();
       
       int adherencia = 0;
       if (recordatoriosPaciente.isNotEmpty) {
         final completados = recordatoriosPaciente.where((r) => r.isCompleted).length;
-        final total = recordatoriosPaciente.length;
-        adherencia = ((completados / total) * 100).round();
+        // Solo contar como "debían ocurrir" los que ya pasaron (ajustando creación hoy)
+        final debianOcurrir = recordatoriosPaciente.where((r) => _isOverdue(r, now) || r.isCompleted).length;
+        final divisor = debianOcurrir == 0 ? recordatoriosPaciente.length : debianOcurrir;
+        adherencia = ((completados / (divisor == 0 ? 1 : divisor)) * 100).round();
       }
       
       pacientesConAdherencia.add({
@@ -725,17 +750,26 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildPatientAnalysisCard(UserModel paciente, int index) {
-    // Obtener recordatorios reales del paciente
+    // Recordatorios del paciente dentro del período seleccionado
+    final periodStart = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final periodEnd = DateTime(_endDate.year, _endDate.month, _endDate.day, 23, 59, 59);
+    final now = DateTime.now();
+
     final recordatoriosPaciente = _reminders.where((r) => 
-      r.userId == paciente.userId
+      r.userId == paciente.userId &&
+      r.dateTime.isAfter(periodStart.subtract(Duration(seconds: 1))) &&
+      r.dateTime.isBefore(periodEnd.add(Duration(seconds: 1)))
     ).toList();
     
     final totalReminders = recordatoriosPaciente.length;
     final completedReminders = recordatoriosPaciente.where((r) => r.isCompleted).length;
-    final pendingReminders = totalReminders - completedReminders;
+    final overdueReminders = recordatoriosPaciente.where((r) => _isOverdue(r, now)).length;
+    final pendingReminders = recordatoriosPaciente.where((r) => _isPending(r, now)).length;
     
-    final adherence = totalReminders > 0 
-        ? ((completedReminders / totalReminders) * 100).round() 
+    // Adherencia respecto a lo que ya debió ocurrir
+    final dueCount = (overdueReminders + completedReminders);
+    final adherence = dueCount > 0 
+        ? ((completedReminders / dueCount) * 100).round() 
         : 0;
 
     return Card(
@@ -790,6 +824,9 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                     ),
                     Expanded(
                       child: _buildPatientStat('Pendientes', '$pendingReminders', Colors.orange),
+                    ),
+                    Expanded(
+                      child: _buildPatientStat('Vencidos', '$overdueReminders', Colors.red),
                     ),
                   ],
                 ),

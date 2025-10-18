@@ -40,11 +40,20 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
         final recordatorios = await _cuidadorService.getRecordatoriosPaciente(paciente.userId!);
         recordatoriosPorPaciente[paciente.userId!] = recordatorios;
         
-        // Calcular estadísticas
-        final total = recordatorios.length;
-        final completados = recordatorios.where((r) => r.isCompleted).length;
-        final pendientes = recordatorios.where((r) => !r.isCompleted && r.dateTime.isAfter(DateTime.now())).length;
-        final vencidos = recordatorios.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+        // Calcular estadísticas con TZ y createdAt
+        final ahora = DateTime.now();
+        int total = recordatorios.length;
+        int completados = recordatorios.where((r) => r.isCompleted).length;
+        int pendientes = 0;
+        int vencidos = 0;
+        for (final r in recordatorios) {
+          final dt = r.dateTime.toLocal();
+          final ca = r.createdAt?.toLocal();
+          final sameDay = dt.year == ahora.year && dt.month == ahora.month && dt.day == ahora.day;
+          final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
+          if (!r.isCompleted && (dt.isAfter(ahora) || createdAfterSchedule)) pendientes++;
+          if (!r.isCompleted && dt.isBefore(ahora) && !createdAfterSchedule) vencidos++;
+        }
         
         estadisticasPorPaciente[paciente.userId!] = {
           'total': total,

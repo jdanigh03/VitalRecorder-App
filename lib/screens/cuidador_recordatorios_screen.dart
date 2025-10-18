@@ -7,6 +7,8 @@ import '../widgets/dashboard_widgets.dart';
 import 'cuidador_reminder_detail_screen.dart';
 import 'cuidador_crear_recordatorio.dart';
 import 'cuidador_pacientes_recordatorios.dart';
+import 'cuidador_dashboard.dart';
+import 'ajustes.dart';
 
 class CuidadorRecordatoriosScreen extends StatefulWidget {
   @override
@@ -111,6 +113,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         elevation: 0,
         title: Row(
           children: [
@@ -191,6 +194,73 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
           ),
         ),
         elevation: 4,
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: 2,
+          onTap: (i) {
+            if (i == 0) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CuidadorDashboard()),
+              );
+              return;
+            }
+            if (i == 1) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CuidadorPacientesRecordatoriosScreen()),
+              );
+              return;
+            }
+            if (i == 2) return; // Recordatorios
+            if (i == 3) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AjustesScreen()),
+              );
+              return;
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: const Color(0xFF4A90E2),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          elevation: 0,
+          backgroundColor: Colors.white,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_outlined),
+              activeIcon: Icon(Icons.dashboard),
+              label: 'Dashboard',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline),
+              activeIcon: Icon(Icons.people),
+              label: 'Pacientes',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_outlined),
+              activeIcon: Icon(Icons.history),
+              label: 'Recordatorios',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              activeIcon: Icon(Icons.settings),
+              label: 'Ajustes',
+            ),
+          ],
+        ),
       ),
     );
   }

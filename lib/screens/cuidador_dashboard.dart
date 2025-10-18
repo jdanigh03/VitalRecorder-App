@@ -324,6 +324,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         elevation: 0,
         title: Row(
           children: [
