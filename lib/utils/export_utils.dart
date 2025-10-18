@@ -327,15 +327,15 @@ class ExportUtils {
           ),
           pw.SizedBox(height: 6),
           pw.Text(
-            '• COMPLETADO: Recordatorio marcado como tomado/realizado',
+            '- COMPLETADO: Recordatorio marcado como tomado/realizado',
             style: const pw.TextStyle(fontSize: 10),
           ),
           pw.Text(
-            '• OMITIDO: Recordatorio no completado después de la fecha/hora programada',
+            '- OMITIDO: Recordatorio no completado después de la fecha/hora programada',
             style: const pw.TextStyle(fontSize: 10),
           ),
           pw.Text(
-            '• PENDIENTE: Recordatorio programado para fecha/hora futura',
+            '- PENDIENTE: Recordatorio programado para fecha/hora futura',
             style: const pw.TextStyle(fontSize: 10),
           ),
         ],
@@ -343,14 +343,31 @@ class ExportUtils {
     );
   }
 
-  /// Calcula estadísticas de adherencia
+  /// Calcula estadísticas de adherencia usando la lógica real de vencimientos
   static Map<String, dynamic> _calculateStatistics(List<Reminder> reminders) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final total = reminders.length;
     final completed = reminders.where((r) => r.isCompleted).length;
-    final missed = reminders.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+    
+    // Usar la lógica real para determinar vencidos (considerando createdAt)
+    final missed = reminders.where((r) {
+      if (r.isCompleted) return false;
+      final dt = r.dateTime.toLocal();
+      final ca = r.createdAt?.toLocal();
+      final rd = DateTime(dt.year, dt.month, dt.day);
+      if (rd.isAtSameMomentAs(today) && ca != null) {
+        final createdAfterSchedule = ca.isAfter(dt);
+        return dt.isBefore(now) && !createdAfterSchedule;
+      }
+      return dt.isBefore(now);
+    }).length;
+    
     final pending = total - completed - missed;
     
-    final adherenceRate = total > 0 ? ((completed / (completed + missed)) * 100).round() : 0;
+    // Calcular adherencia solo sobre recordatorios que debieron ocurrir
+    final shouldHaveOccurred = completed + missed;
+    final adherenceRate = shouldHaveOccurred > 0 ? ((completed / shouldHaveOccurred) * 100).round() : 0;
 
     return {
       'total': total,
@@ -361,15 +378,28 @@ class ExportUtils {
     };
   }
 
-  /// Convierte el estado del recordatorio a texto
+  /// Convierte el estado del recordatorio a texto usando lógica real
   static String _getStatusText(Reminder reminder) {
     if (reminder.isCompleted) {
       return 'COMPLETADO';
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return 'OMITIDO';
-    } else {
-      return 'PENDIENTE';
     }
+    
+    final now = DateTime.now();
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final today = DateTime(now.year, now.month, now.day);
+    final reminderDay = DateTime(dt.year, dt.month, dt.day);
+    
+    if (reminderDay.isAtSameMomentAs(today) && ca != null) {
+      final createdAfterSchedule = ca.isAfter(dt);
+      if (dt.isBefore(now) && !createdAfterSchedule) {
+        return 'OMITIDO';
+      }
+    } else if (dt.isBefore(now)) {
+      return 'OMITIDO';
+    }
+    
+    return 'PENDIENTE';
   }
 
   /// Convierte el tipo del recordatorio a texto
@@ -401,6 +431,7 @@ class ExportUtils {
     required DateTime startDate,
     required DateTime endDate,
     required Map<String, dynamic> stats,
+    Map<String, dynamic>? options,
   }) async {
     try {
       final pdf = pw.Document();
@@ -412,15 +443,22 @@ class ExportUtils {
           build: (pw.Context context) {
             return [
               // Encabezado del cuidador
-              _buildCuidadorHeader(startDate, endDate, pacientes.length),
+              _buildCuidadorHeader(startDate, endDate, pacientes.length, options),
               pw.SizedBox(height: 20),
               
               // Resumen general
               _buildCuidadorGeneralStats(stats, allReminders),
               pw.SizedBox(height: 20),
               
-              // Análisis por paciente
-              _buildCuidadorPatientAnalysis(pacientes, allReminders),
+              // Gráficos (si están habilitados)
+              if (options?['includeGraphs'] == true) ...[
+                _buildGraphsPlaceholder(),
+                pw.SizedBox(height: 20),
+              ],
+              
+              // Análisis por paciente (si detalles están habilitados)
+              if (options?['includeDetails'] == true)
+                _buildCuidadorPatientAnalysis(pacientes, allReminders),
             ];
           },
           footer: (pw.Context context) {
@@ -517,15 +555,21 @@ class ExportUtils {
     required List<Reminder> allReminders,
     required DateTime startDate,
     required DateTime endDate,
+    Map<String, dynamic>? options,
   }) async {
     try {
       final sortedReminders = List<Reminder>.from(allReminders)
         ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
       // Crear datos CSV con información del paciente
-      List<List<dynamic>> csvData = [
-        ['Paciente', 'Email', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Estado', 'Frecuencia']
-      ];
+      List<List<dynamic>> csvData = [];
+      
+      // Encabezado básico
+      if (options?['includeDetails'] == true) {
+        csvData.add(['Paciente', 'Email', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Estado', 'Frecuencia', 'Creado']);
+      } else {
+        csvData.add(['Paciente', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Estado']);
+      }
 
       for (final reminder in sortedReminders) {
         // Buscar el paciente correspondiente al recordatorio
@@ -543,17 +587,28 @@ class ExportUtils {
           ),
         );
 
-        csvData.add([
-          paciente.persona.nombres + ' ' + paciente.persona.apellidos,
-          paciente.email,
-          _dateFormat.format(reminder.dateTime),
-          _timeFormat.format(reminder.dateTime),
-          reminder.title,
-          reminder.description,
-          _getTypeText(reminder.type),
-          _getStatusText(reminder),
-          reminder.frequency,
-        ]);
+        if (options?['includeDetails'] == true) {
+          csvData.add([
+            paciente.persona.nombres + ' ' + paciente.persona.apellidos,
+            paciente.email,
+            _dateFormat.format(reminder.dateTime),
+            _timeFormat.format(reminder.dateTime),
+            reminder.title,
+            reminder.description,
+            _getTypeText(reminder.type),
+            _getStatusText(reminder),
+            reminder.frequency,
+            reminder.createdAt != null ? _dateFormat.format(reminder.createdAt!) : 'N/A',
+          ]);
+        } else {
+          csvData.add([
+            paciente.persona.nombres + ' ' + paciente.persona.apellidos,
+            _dateFormat.format(reminder.dateTime),
+            _timeFormat.format(reminder.dateTime),
+            reminder.title,
+            _getStatusText(reminder),
+          ]);
+        }
       }
 
       // Agregar hoja de estadísticas por paciente
@@ -644,7 +699,7 @@ class ExportUtils {
 
   // ========== MÉTODOS DE CONSTRUCCIÓN ESPECÍFICOS PARA CUIDADOR ==========
 
-  static pw.Widget _buildCuidadorHeader(DateTime startDate, DateTime endDate, int totalPatients) {
+  static pw.Widget _buildCuidadorHeader(DateTime startDate, DateTime endDate, int totalPatients, [Map<String, dynamic>? options]) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
       decoration: pw.BoxDecoration(
@@ -695,6 +750,13 @@ class ExportUtils {
             'Fecha de generación: ${_dateFormat.format(DateTime.now())}',
             style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
           ),
+          if (options != null) ...[
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'Opciones: ${options['includeGraphs'] == true ? "Gráficos " : ""}${options['includeDetails'] == true ? "Detalles " : ""}${options['selectedPatient'] != null ? "Paciente específico " : ""}${options['selectedType'] != null ? "Tipo: ${options['selectedType']}" : ""}',
+              style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600, fontStyle: pw.FontStyle.italic),
+            ),
+          ],
         ],
       ),
     );
@@ -859,15 +921,15 @@ class ExportUtils {
           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
         ),
         pw.Text(
-          '• Incrementar recordatorios y seguimiento',
+          '- Incrementar recordatorios y seguimiento',
           style: const pw.TextStyle(fontSize: 11),
         ),
         pw.Text(
-          '• Considerar ajustar horarios de medicación',
+          '- Considerar ajustar horarios de medicación',
           style: const pw.TextStyle(fontSize: 11),
         ),
         pw.Text(
-          '• Realizar seguimiento médico más frecuente',
+          '- Realizar seguimiento médico más frecuente',
           style: const pw.TextStyle(fontSize: 11),
         ),
       ];
@@ -878,11 +940,11 @@ class ExportUtils {
           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
         ),
         pw.Text(
-          '• Mantener seguimiento regular',
+          '- Mantener seguimiento regular',
           style: const pw.TextStyle(fontSize: 11),
         ),
         pw.Text(
-          '• Reforzar educación sobre la importancia del tratamiento',
+          '- Reforzar educación sobre la importancia del tratamiento',
           style: const pw.TextStyle(fontSize: 11),
         ),
       ];
@@ -893,11 +955,91 @@ class ExportUtils {
           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
         ),
         pw.Text(
-          '• El paciente mantiene una excelente adherencia al tratamiento',
+          '- El paciente mantiene una excelente adherencia al tratamiento',
           style: const pw.TextStyle(fontSize: 11),
         ),
       ];
     }
+  }
+
+  /// Widget placeholder para gráficos en PDF
+  static pw.Widget _buildGraphsPlaceholder() {
+    return pw.Container(
+      height: 150,
+      padding: const pw.EdgeInsets.all(16),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey300),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        children: [
+          pw.Text(
+            'GRÁFICOS Y VISUALIZACIONES',
+            style: pw.TextStyle(
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.blue800,
+            ),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildGraphPlaceholder('Tendencia\nde Adherencia', PdfColors.green),
+              _buildGraphPlaceholder('Distribución\npor Tipos', PdfColors.blue),
+              _buildGraphPlaceholder('Ranking de\nPacientes', PdfColors.orange),
+            ],
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Los gráficos interactivos están disponibles en la aplicación',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600, fontStyle: pw.FontStyle.italic),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildGraphPlaceholder(String title, PdfColor color) {
+    return pw.Container(
+      width: 120,
+      height: 80,
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: color),
+      ),
+      child: pw.Column(
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        children: [
+          pw.Container(
+            width: 30,
+            height: 30,
+            decoration: pw.BoxDecoration(
+              color: color,
+              shape: pw.BoxShape.circle,
+            ),
+            child: pw.Center(
+              child: pw.Text(
+                '•',
+                style: pw.TextStyle(
+                  fontSize: 16,
+                  color: PdfColors.white,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 8, color: color),
+            textAlign: pw.TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 
   static pw.Widget _buildPatientAdherenceAnalysis(Map<String, dynamic> stats) {
