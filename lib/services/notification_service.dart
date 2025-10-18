@@ -3,11 +3,32 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+
+  /// Obtiene los minutos de anticipación configurados por el usuario
+  Future<int> _getNotificationAnticipationMinutes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final anticipationSetting = prefs.getString('notification_time') ?? '5 minutos antes';
+      
+      // Extraer número de minutos del texto
+      if (anticipationSetting.contains('5 minutos')) return 5;
+      if (anticipationSetting.contains('10 minutos')) return 10;
+      if (anticipationSetting.contains('15 minutos')) return 15;
+      if (anticipationSetting.contains('30 minutos')) return 30;
+      if (anticipationSetting.contains('1 hora')) return 60;
+      
+      return 5; // Por defecto 5 minutos
+    } catch (e) {
+      print('Error obteniendo configuración de anticipación: $e');
+      return 5;
+    }
+  }
 
   Future<void> initNotifications() async {
     // Solicitar permiso para recibir notificaciones
@@ -185,6 +206,109 @@ class NotificationService {
         .collection('notificaciones_pendientes')
         .doc(notificacionId)
         .update({'leida': true});
+  }
+  
+  /// Envía notificación para recordatorio próximo
+  Future<void> sendReminderNotification({
+    required String title,
+    required String description,
+    required DateTime scheduledTime,
+    required String type,
+  }) async {
+    final now = DateTime.now();
+    final minutesUntil = scheduledTime.difference(now).inMinutes;
+    
+    String notificationTitle;
+    String notificationBody;
+    
+    if (minutesUntil >= -5 && minutesUntil <= 0) {
+      // Recordatorio es ahora o recién pasó (hasta 5 minutos)
+      notificationTitle = '🔔 ¡Es hora!';
+      notificationBody = '$title - $description';
+    } else if (minutesUntil > 0 && minutesUntil <= 5) {
+      // Recordatorio muy próximo (1-5 minutos)
+      notificationTitle = '⏰ ¡Próximo recordatorio!';
+      notificationBody = '$title en $minutesUntil minutos';
+    } else if (minutesUntil > 5 && minutesUntil <= 15) {
+      // Recordatorio próximo (6-15 minutos)
+      notificationTitle = '⏰ Recordatorio próximo';
+      notificationBody = '$title en $minutesUntil minutos';
+    } else if (minutesUntil > 15 && minutesUntil <= 60) {
+      // Recordatorio en la próxima hora
+      notificationTitle = '📅 Tienes un recordatorio pendiente';
+      notificationBody = '$title programado para las ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}';
+    } else if (minutesUntil > 60) {
+      // Recordatorio para más tarde
+      final tomorrow = DateTime(now.year, now.month, now.day + 1);
+      final scheduledDay = DateTime(scheduledTime.year, scheduledTime.month, scheduledTime.day);
+      
+      if (scheduledDay.isAtSameMomentAs(tomorrow)) {
+        notificationTitle = '🌅 Recordatorio para mañana';
+        notificationBody = '$title a las ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}';
+      } else {
+        notificationTitle = '📅 Recordatorio pendiente';
+        notificationBody = '$title programado para ${scheduledTime.day}/${scheduledTime.month}';
+      }
+    } else {
+      // Recordatorio muy vencido (más de 5 minutos), no enviar notificación
+      print('=== NOTIFICACIÓN CANCELADA ===');
+      print('Recordatorio muy vencido: $title');
+      print('Minutos transcurridos: ${minutesUntil.abs()}');
+      return;
+    }
+    
+    await sendLocalNotification(notificationTitle, notificationBody);
+    
+    print('=== NOTIFICACIÓN DE RECORDATORIO ENVIADA ===');
+    print('Título: $notificationTitle');
+    print('Mensaje: $notificationBody');
+    print('Minutos restantes: $minutesUntil');
+  }
+  
+  /// Verifica y envía notificaciones para recordatorios pendientes
+  Future<void> checkAndSendReminderNotifications(List reminders) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final anticipationMinutes = await _getNotificationAnticipationMinutes();
+    
+    for (final reminder in reminders) {
+      if (reminder.isCompleted) continue;
+      
+      final dt = reminder.dateTime.toLocal();
+      final ca = reminder.createdAt?.toLocal();
+      final rd = DateTime(dt.year, dt.month, dt.day);
+      final isToday = rd.isAtSameMomentAs(today);
+      final minutesUntil = dt.difference(now).inMinutes;
+      
+      bool shouldNotify = false;
+      
+      if (isToday) {
+        // Para hoy: notificar según configuración de anticipación del usuario
+        // Rango: desde anticipationMinutes antes hasta 5 minutos después
+        shouldNotify = minutesUntil <= anticipationMinutes && minutesUntil >= -5;
+      } else if (rd.isBefore(today)) {
+        // Para fechas pasadas: solo notificar casos muy específicos
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        final createdRecently = ca != null && now.difference(ca).inHours < 2;
+        
+        // Solo notificar si fue creado después de la hora Y fue creado recientemente (menos de 2 horas)
+        shouldNotify = createdAfterSchedule && createdRecently;
+      } else {
+        // Fecha futura: notificar si es mañana y faltan menos de 24 horas
+        final tomorrow = DateTime(now.year, now.month, now.day + 1);
+        final isWithinNext24Hours = minutesUntil <= 1440; // 24 horas en minutos
+        shouldNotify = rd.isAtSameMomentAs(tomorrow) && isWithinNext24Hours;
+      }
+      
+      if (shouldNotify) {
+        await sendReminderNotification(
+          title: reminder.title,
+          description: reminder.description,
+          scheduledTime: reminder.dateTime,
+          type: reminder.type,
+        );
+      }
+    }
   }
 }
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_wrapper.dart';
 import 'asignar_cuidador.dart';
 import 'perfil_usuario.dart';
-import 'cuidador_dashboard.dart';
-import 'cuidador_pacientes_screen.dart';
-import 'cuidador_recordatorios_screen.dart';
+import 'welcome.dart';
+import 'historial.dart';
 
 class AjustesScreen extends StatefulWidget {
   const AjustesScreen({Key? key}) : super(key: key);
@@ -15,10 +15,43 @@ class AjustesScreen extends StatefulWidget {
 }
 
 class _AjustesScreenState extends State<AjustesScreen> {
+  int _selectedIndex = 3; // Ajustes es el índice 3
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
   String _notificationTime = '5 minutos antes';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+        _soundEnabled = prefs.getBool('sound_enabled') ?? true;
+        _vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
+        _notificationTime = prefs.getString('notification_time') ?? '5 minutos antes';
+      });
+    } catch (e) {
+      print('Error cargando configuraciones: $e');
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('notifications_enabled', _notificationsEnabled);
+      await prefs.setBool('sound_enabled', _soundEnabled);
+      await prefs.setBool('vibration_enabled', _vibrationEnabled);
+      await prefs.setString('notification_time', _notificationTime);
+    } catch (e) {
+      print('Error guardando configuraciones: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,12 +75,13 @@ class _AjustesScreenState extends State<AjustesScreen> {
               'Recibir alertas de recordatorios',
               Icons.notifications_active,
               Colors.blue,
-              Switch(
+                Switch(
                 value: _notificationsEnabled,
                 onChanged: (value) {
                   setState(() {
                     _notificationsEnabled = value;
                   });
+                  _saveSettings();
                 },
                 activeColor: Color(0xFF4A90E2),
               ),
@@ -58,12 +92,13 @@ class _AjustesScreenState extends State<AjustesScreen> {
                 'Reproducir sonido en notificaciones',
                 Icons.volume_up,
                 Colors.orange,
-                Switch(
+                  Switch(
                   value: _soundEnabled,
                   onChanged: (value) {
                     setState(() {
                       _soundEnabled = value;
                     });
+                    _saveSettings();
                   },
                   activeColor: Color(0xFF4A90E2),
                 ),
@@ -73,12 +108,13 @@ class _AjustesScreenState extends State<AjustesScreen> {
                 'Vibrar al recibir notificaciones',
                 Icons.vibration,
                 Colors.purple,
-                Switch(
+                  Switch(
                   value: _vibrationEnabled,
                   onChanged: (value) {
                     setState(() {
                       _vibrationEnabled = value;
                     });
+                    _saveSettings();
                   },
                   activeColor: Color(0xFF4A90E2),
                 ),
@@ -94,6 +130,7 @@ class _AjustesScreenState extends State<AjustesScreen> {
                   setState(() {
                     _notificationTime = value!;
                   });
+                  _saveSettings();
                 },
               ),
             ],
@@ -192,72 +229,30 @@ class _AjustesScreenState extends State<AjustesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: Offset(0, -2),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: 3,
-          onTap: (i) {
-            if (i == 0) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CuidadorDashboard()),
-              );
-              return;
-            }
-            if (i == 1) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => CuidadorPacientesScreen()),
-              );
-              return;
-            }
-            if (i == 2) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => CuidadorRecordatoriosScreen()),
-              );
-              return;
-            }
-            if (i == 3) return; // Ajustes
-          },
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFF4A90E2),
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          elevation: 0,
-          backgroundColor: Colors.white,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_outlined),
-              activeIcon: Icon(Icons.dashboard),
-              label: 'Dashboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.people_outline),
-              activeIcon: Icon(Icons.people),
-              label: 'Pacientes',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.history_outlined),
-              activeIcon: Icon(Icons.history),
-              label: 'Recordatorios',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Ajustes',
-            ),
-          ],
-        ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF4A90E2),
+        unselectedItemColor: Colors.grey,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people),
+            label: 'Cuidadores',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'Historial',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Ajustes',
+          ),
+        ],
       ),
     );
   }
@@ -814,5 +809,37 @@ class _AjustesScreenState extends State<AjustesScreen> {
         ],
       ),
     );
+  }
+
+  void _onItemTapped(int index) {
+    if (index == _selectedIndex) return;
+
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        );
+        break;
+      case 1:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
+        );
+        break;
+      case 2:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HistorialScreen()),
+        );
+        break;
+      case 3:
+        // Ya estamos en Ajustes
+        break;
+    }
   }
 }

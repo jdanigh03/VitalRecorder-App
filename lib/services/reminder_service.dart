@@ -98,35 +98,46 @@ class ReminderService {
       if (userId == null) return [];
       final collection = _remindersCollection;
       
-      // Consulta completa con ordenamiento (ahora que tenemos el índice)
+      print('=== OBTENIENDO RECORDATORIOS ACTIVOS ===');
+      print('Usuario ID: $userId');
+      
+      // Consulta MUY simple: solo por usuario, luego filtrar en memoria
       final snapshot = await collection
           .where('userId', isEqualTo: userId)
-          .where('isActive', isEqualTo: true)
-          .orderBy('dateTime', descending: false)
           .get();
           
-      print('Consulta ejecutada exitosamente. Documentos encontrados: ${snapshot.docs.length}');
+      print('Total documentos del usuario: ${snapshot.docs.length}');
       
-      final reminders = snapshot.docs.map((doc) {
+      final activeReminders = <Reminder>[];
+      
+      for (final doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        print('Procesando recordatorio: ${data['title']} - ${data['dateTime']}');
-        return _convertTimestampToDateTime(data);
-      }).toList();
+        final isActive = data['isActive'] ?? false;
+        final title = data['title'] ?? 'Sin título';
+        
+        print('Evaluando: $title - Activo: $isActive');
+        
+        // Solo incluir los que estén activos
+        if (isActive == true) {
+          print('  -> Incluido: $title');
+          activeReminders.add(_convertTimestampToDateTime(data));
+        } else {
+          print('  -> Excluido: $title (inactivo)');
+        }
+      }
       
-      print('Recordatorios procesados exitosamente: ${reminders.length}');
-      return reminders;
+      // Ordenar en memoria
+      activeReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      
+      print('=== RESULTADO FINAL ===');
+      print('Recordatorios activos encontrados: ${activeReminders.length}');
+      for (final r in activeReminders) {
+        print('  - ${r.title} (${r.dateTime.day}/${r.dateTime.month})');
+      }
+      
+      return activeReminders;
     } catch (e) {
       print('ERROR obteniendo recordatorios activos: $e');
-      print('Stack trace: ${StackTrace.current}');
-      
-      if (e.toString().contains('INDEX_NOT_FOUND') || e.toString().contains('requires an index')) {
-        print('*********************************************************************************');
-        print('FIRESTORE: El error anterior probablemente indica que necesitas crear un índice.');
-        print('Por favor, busca en los logs de la consola un enlace que empiece con:');
-        print('https://console.firebase.google.com/project/.../database/firestore/indexes?create_composite=...');
-        print('Copia ese enlace en tu navegador para crear el índice automáticamente.');
-        print('*********************************************************************************');
-      }
       return [];
     }
   }

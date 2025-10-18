@@ -4,6 +4,9 @@ import '../models/cuidador.dart';
 import '../models/invitacion_cuidador.dart';
 import '../services/cuidador_service.dart';
 import '../services/invitacion_service.dart';
+import 'welcome.dart';
+import 'historial.dart';
+import 'ajustes.dart';
 
 class AsignarCuidadorScreen extends StatefulWidget {
   const AsignarCuidadorScreen({Key? key}) : super(key: key);
@@ -13,6 +16,7 @@ class AsignarCuidadorScreen extends StatefulWidget {
 }
 
 class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
+  int _selectedIndex = 1; // Cuidadores es el índice 1
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
   final _emailController = TextEditingController();
@@ -339,13 +343,10 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         title: const Text(
           'Asignar Cuidador',
           style: TextStyle(color: Colors.white),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
@@ -547,6 +548,31 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
             color: Colors.white,
           ),
         ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF4A90E2),
+        unselectedItemColor: Colors.grey,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people),
+            label: 'Cuidadores',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'Historial',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Ajustes',
+          ),
+        ],
       ),
     );
   }
@@ -931,6 +957,38 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
         ),
       ),
     );
+  }
+
+  void _onItemTapped(int index) {
+    if (index == _selectedIndex) return;
+
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        );
+        break;
+      case 1:
+        // Ya estamos en Cuidadores
+        break;
+      case 2:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HistorialScreen()),
+        );
+        break;
+      case 3:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AjustesScreen()),
+        );
+        break;
+    }
   }
 
   void _mostrarDialogoEliminar(Cuidador cuidador) {
