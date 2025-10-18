@@ -328,35 +328,83 @@ class _DetalleRecordatorioScreenState extends State<DetalleRecordatorioScreen> {
 
   String _getStatusText(Reminder reminder) {
     if (!reminder.isActive) return 'ARCHIVADO';
-    if (reminder.isCompleted) {
-      return 'COMPLETADO';
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return 'OMITIDO';
+    if (reminder.isCompleted) return 'COMPLETADO';
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    bool isPendiente = false;
+    
+    if (isToday) {
+      // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+      isPendiente = dt.isAfter(now) || createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
+      isPendiente = createdAfterSchedule;
     } else {
-      return 'PENDIENTE';
+      // Fecha futura
+      isPendiente = true;
+      isVencido = false;
     }
+    
+    return isVencido ? 'OMITIDO' : 'PENDIENTE';
   }
 
   IconData _getStatusIcon(Reminder reminder) {
     if (!reminder.isActive) return Icons.archive;
-    if (reminder.isCompleted) {
-      return Icons.check_circle;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Icons.cancel;
-    } else {
-      return Icons.schedule;
+    if (reminder.isCompleted) return Icons.check_circle;
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    
+    if (isToday) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
+    
+    return isVencido ? Icons.cancel : Icons.schedule;
   }
 
   Color _getStatusColor(Reminder reminder) {
     if (!reminder.isActive) return Colors.grey;
-    if (reminder.isCompleted) {
-      return Colors.green;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Colors.red;
-    } else {
-      return Colors.orange;
+    if (reminder.isCompleted) return Colors.green;
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dt = reminder.dateTime.toLocal();
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    bool isVencido = false;
+    
+    if (isToday) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = dt.isBefore(now) && !createdAfterSchedule;
+    } else if (rd.isBefore(today)) {
+      final createdAfterSchedule = ca != null && ca.isAfter(dt);
+      isVencido = !createdAfterSchedule;
     }
+    
+    return isVencido ? Colors.red : Colors.orange;
   }
 
   void _showCompleteDialog() {
