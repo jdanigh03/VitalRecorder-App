@@ -225,22 +225,64 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
   String _getStatusText(Reminder reminder) {
     if (!reminder.isActive) return 'ARCHIVADO';
     if (reminder.isCompleted) return 'COMPLETADO';
-    if (reminder.dateTime.isBefore(DateTime.now())) return 'OMITIDO';
-    return 'PENDIENTE';
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+    final isToday = reminderDate.isAtSameMomentAs(today);
+    
+    if (isToday) {
+      // Para hoy: omitido solo si la hora ya pasó
+      if (reminder.dateTime.isBefore(now)) {
+        // Verificar si fue creado después de la hora programada
+        final createdAt = reminder.createdAt?.toLocal();
+        if (createdAt != null && createdAt.isAfter(reminder.dateTime)) {
+          return 'PENDIENTE'; // Creado después de la hora, sigue pendiente
+        }
+        return 'OMITIDO';
+      }
+      return 'PENDIENTE';
+    } else if (reminderDate.isBefore(today)) {
+      // Para fechas pasadas: verificar si fue creado después de la hora programada
+      final createdAt = reminder.createdAt?.toLocal();
+      if (createdAt != null && createdAt.isAfter(reminder.dateTime)) {
+        return 'PENDIENTE'; // Creado después de la hora, sigue pendiente
+      }
+      return 'OMITIDO';
+    } else {
+      // Fecha futura
+      return 'PENDIENTE';
+    }
   }
 
   IconData _getStatusIcon(Reminder reminder) {
     if (!reminder.isActive) return Icons.archive;
     if (reminder.isCompleted) return Icons.check_circle;
-    if (reminder.dateTime.isBefore(DateTime.now())) return Icons.cancel;
-    return Icons.schedule;
+    
+    final statusText = _getStatusText(reminder);
+    switch (statusText) {
+      case 'OMITIDO':
+        return Icons.cancel;
+      case 'PENDIENTE':
+        return Icons.schedule;
+      default:
+        return Icons.schedule;
+    }
   }
 
   Color _getStatusColor(Reminder reminder) {
     if (!reminder.isActive) return Colors.grey;
     if (reminder.isCompleted) return Colors.green;
-    if (reminder.dateTime.isBefore(DateTime.now())) return Colors.red;
-    return Colors.orange;
+    
+    final statusText = _getStatusText(reminder);
+    switch (statusText) {
+      case 'OMITIDO':
+        return Colors.red;
+      case 'PENDIENTE':
+        return Colors.orange;
+      default:
+        return Colors.orange;
+    }
   }
 
   void _showArchiveDialog() {

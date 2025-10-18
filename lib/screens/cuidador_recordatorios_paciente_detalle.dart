@@ -50,31 +50,58 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
       final ahora = DateTime.now();
       final hoy = DateTime(ahora.year, ahora.month, ahora.day);
       
-      // Ajuste: para HOY ignoramos el flag isCompleted (usamos la nueva lógica por fecha)
+      // Lógica corregida de pendientes: No completados y programados a futuro
       final pendientes = recordatorios.where((r) {
+        if (r.isCompleted) return false;
+        
         final rd = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
         final esHoy = rd.isAtSameMomentAs(hoy);
+        
         if (esHoy) {
-          // Para hoy: mostrar como pendiente si la hora aún no pasa
+          // Para hoy: pendiente si la hora aún no pasa
           return r.dateTime.isAfter(ahora);
         }
-        // Para otras fechas: mantener la lógica antigua temporalmente
-        return !r.isCompleted && r.dateTime.isAfter(ahora);
+        
+        // Para fechas futuras: pendiente si es fecha futura
+        if (rd.isAfter(hoy)) {
+          return true;
+        }
+        
+        // Para fechas pasadas: verificar si fue creado después de la hora programada
+        if (rd.isBefore(hoy)) {
+          final ca = r.createdAt?.toLocal();
+          final createdAfterSchedule = ca != null && ca.isAfter(r.dateTime);
+          if (createdAfterSchedule) {
+            return true; // Creado después de la hora, sigue pendiente
+          }
+        }
+        
+        return false;
       }).toList();
       
       final completados = recordatorios.where((r) => r.isCompleted).toList();
       
       final vencidos = recordatorios.where((r) {
+        if (r.isCompleted) return false;
+        
         final dt = r.dateTime.toLocal();
         final ca = r.createdAt?.toLocal();
         final rd = DateTime(dt.year, dt.month, dt.day);
         final esHoy = rd.isAtSameMomentAs(hoy);
+        
         if (esHoy) {
           // Para hoy: considerar vencido si la hora ya pasó, excepto si se creó después de la hora programada
           final createdAfterSchedule = ca != null && ca.isAfter(dt);
           return dt.isBefore(ahora) && !createdAfterSchedule;
         }
-        return !r.isCompleted && dt.isBefore(ahora);
+        
+        // Para fechas pasadas: verificar si fue creado después de la hora programada
+        if (rd.isBefore(hoy)) {
+          final createdAfterSchedule = ca != null && ca.isAfter(dt);
+          return !createdAfterSchedule; // Solo vencido si NO fue creado después de la hora
+        }
+        
+        return false; // Fechas futuras no son vencidas
       }).toList();
       
       // Ordenar recordatorios
@@ -118,6 +145,10 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           children: [
             CircleAvatar(
@@ -461,29 +492,53 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
 
   Widget _buildRecordatorioCard(Reminder recordatorio, String tipo) {
     final ahora = DateTime.now();
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
     final dt = recordatorio.dateTime.toLocal();
     final ca = recordatorio.createdAt?.toLocal();
-    final isHoy = dt.day == ahora.day && dt.month == ahora.month && dt.year == ahora.year;
-    final createdAfterSchedule = isHoy && ca != null && ca.isAfter(dt);
-    final isVencido = !recordatorio.isCompleted && dt.isBefore(ahora) && !createdAfterSchedule;
-    final isPendiente = !recordatorio.isCompleted && recordatorio.dateTime.isAfter(ahora);
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isHoy = rd.isAtSameMomentAs(hoy);
+    
+    // Lógica corregida: consistente con la lógica de clasificación
+    bool isVencido = false;
+    bool isPendiente = false;
+    
+    if (!recordatorio.isCompleted) {
+      if (isHoy) {
+        // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = dt.isBefore(ahora) && !createdAfterSchedule;
+        isPendiente = dt.isAfter(ahora) || createdAfterSchedule;
+      } else if (rd.isBefore(hoy)) {
+        // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = !createdAfterSchedule;
+        isPendiente = createdAfterSchedule;
+      } else {
+        // Fecha futura
+        isPendiente = true;
+        isVencido = false;
+      }
+    }
 
     Color cardColor = Colors.white;
     Color borderColor = Colors.grey[300]!;
     Color iconColor = Colors.grey[600]!;
     
     if (recordatorio.isCompleted) {
+      // Completado: Verde
       cardColor = Colors.green[50]!;
       borderColor = Colors.green[200]!;
       iconColor = Colors.green[600]!;
     } else if (isVencido) {
+      // Vencido: Rojo
       cardColor = Colors.red[50]!;
       borderColor = Colors.red[200]!;
       iconColor = Colors.red[600]!;
-    } else if (isHoy) {
-      cardColor = Colors.blue[50]!;
-      borderColor = Colors.blue[200]!;
-      iconColor = Colors.blue[600]!;
+    } else if (isPendiente) {
+      // Pendiente: Naranja
+      cardColor = Colors.orange[50]!;
+      borderColor = Colors.orange[200]!;
+      iconColor = Colors.orange[600]!;
     }
 
     return Container(
@@ -617,14 +672,14 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                         ),
                         child: Icon(Icons.warning, color: Colors.red[700], size: 16),
                       )
-                    else if (isHoy)
+                    else if (isPendiente)
                       Container(
                         padding: EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.blue[100],
+                          color: Colors.orange[100],
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.today, color: Colors.blue[700], size: 16),
+                        child: Icon(Icons.schedule, color: Colors.orange[700], size: 16),
                       ),
                     SizedBox(height: 8),
                     Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey[400]),

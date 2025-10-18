@@ -4,11 +4,13 @@ import '../models/reminder.dart';
 import '../models/user.dart';
 import '../models/cuidador.dart';
 import 'calendar_service.dart';
+import 'bracelet_service.dart';
 
 class CuidadorService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final CalendarService _calendarService = CalendarService();
+  final BraceletService _braceletService = BraceletService();
 
   User? get currentUser => _auth.currentUser;
 
@@ -309,6 +311,20 @@ class CuidadorService {
         'cuidadorEmail': currentEmail,
       };
       await docRef.set(reminderData);
+      
+      // Marcar para sincronización diferida con la manilla del paciente
+      try {
+        print('Recordatorio creado por cuidador para paciente $pacienteId');
+        print('El recordatorio se sincronizará automáticamente cuando el paciente abra su app');
+        
+        // Opcional: Enviar notificación push al paciente informando del nuevo recordatorio
+        // TODO: Implementar notificación push cuando esté disponible
+        print('Nuevo recordatorio disponible para sincronizar: ${reminder.title}');
+      } catch (e) {
+        print('Error en logging de sincronización: $e');
+        // No afecta la creación del recordatorio
+      }
+      
       return true;
     } catch (e) {
       print('Error creando recordatorio para paciente: $e');

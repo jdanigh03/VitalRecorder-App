@@ -851,11 +851,36 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
   Widget _buildReminderCard(Reminder reminder) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final dt = reminder.dateTime.toLocal();
     final ca = reminder.createdAt?.toLocal();
-    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
-    final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
-    final isPast = dt.isBefore(now) && !reminder.isCompleted && !createdAfterSchedule;
+    final rd = DateTime(dt.year, dt.month, dt.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    // Lógica corregida: consistente con la lógica de clasificación arreglada
+    bool isVencido = false;
+    bool isPendiente = false;
+    
+    if (!reminder.isCompleted) {
+      if (isToday) {
+        // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = dt.isBefore(now) && !createdAfterSchedule;
+        isPendiente = dt.isAfter(now) || createdAfterSchedule;
+      } else if (rd.isBefore(today)) {
+        // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
+        final createdAfterSchedule = ca != null && ca.isAfter(dt);
+        isVencido = !createdAfterSchedule;
+        isPendiente = createdAfterSchedule;
+      } else {
+        // Fecha futura
+        isPendiente = true;
+        isVencido = false;
+      }
+    }
+    
+    // Para mantener compatibilidad con el código existente
+    final isPast = isVencido;
     
     return GestureDetector(
       onTap: () {
@@ -867,12 +892,14 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
+            color: reminder.isCompleted
+                ? Colors.green.withOpacity(0.3)
+                : isVencido 
+                    ? Colors.red.withOpacity(0.3)
+                    : isPendiente
+                        ? Colors.orange.withOpacity(0.3)
+                        : Colors.transparent,
+            width: reminder.isCompleted || isVencido || isPendiente ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -925,6 +952,29 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Nombre del paciente
+                        FutureBuilder<String>(
+                          future: _getPatientName(reminder.userId ?? ''),
+                          builder: (context, snapshot) {
+                            final patientName = snapshot.data ?? 'Paciente';
+                            return Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Color(0xFF4A90E2).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '👤 $patientName',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
                         Text(
                           reminder.title,
                           style: TextStyle(
@@ -938,17 +988,18 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          reminder.description,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
+                        if (reminder.description.isNotEmpty)
+                          Text(
+                            reminder.description,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              decoration: reminder.isCompleted 
+                                  ? TextDecoration.lineThrough 
+                                  : null,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
@@ -960,7 +1011,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 Icon(
                                   Icons.access_time, 
                                   size: 14, 
-                                  color: isPast ? Colors.red : Colors.grey[500],
+                                  color: isVencido 
+                                      ? Colors.red 
+                                      : isPendiente 
+                                          ? Colors.orange 
+                                          : Colors.grey[500],
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -968,7 +1023,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: isPast ? Colors.red : Color(0xFF4A90E2),
+                                    color: isVencido 
+                                        ? Colors.red 
+                                        : isPendiente 
+                                            ? Colors.orange 
+                                            : Color(0xFF4A90E2),
                                   ),
                                 ),
                               ],
@@ -1000,7 +1059,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     decoration: BoxDecoration(
                       color: reminder.isCompleted 
                           ? Colors.green.withOpacity(0.1)
-                          : isPast 
+                          : isVencido 
                               ? Colors.red.withOpacity(0.1)
                               : Colors.orange.withOpacity(0.1),
                       shape: BoxShape.circle,
@@ -1008,12 +1067,12 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     child: Icon(
                       reminder.isCompleted 
                           ? Icons.check_circle
-                          : isPast 
+                          : isVencido 
                               ? Icons.error
                               : Icons.schedule,
                       color: reminder.isCompleted 
                           ? Colors.green
-                          : isPast 
+                          : isVencido 
                               ? Colors.red
                               : Colors.orange,
                       size: 32,
@@ -1023,8 +1082,8 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
               ),
             ),
             
-            // Indicador de estado omitido
-            if (isPast)
+            // Indicador de estado
+            if (isVencido)
               Positioned(
                 top: 8,
                 left: 8,
@@ -1036,6 +1095,26 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ),
                   child: Text(
                     'Omitido',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              )
+            else if (isPendiente)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Pendiente',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,
@@ -1065,6 +1144,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     final year = date.year;
     
     return '$dayName, $day de $month de $year';
+  }
+  
+  Future<String> _getPatientName(String userId) async {
+    try {
+      final pacientes = await _cuidadorService.getPacientes();
+      final paciente = pacientes.firstWhere(
+        (p) => p.userId == userId,
+        orElse: () => throw Exception('Paciente no encontrado'),
+      );
+      return paciente.persona.nombres;
+    } catch (e) {
+      return 'Paciente';
+    }
   }
 
 

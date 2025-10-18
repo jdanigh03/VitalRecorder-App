@@ -155,6 +155,10 @@ class _CalendarioScreenState extends State<CalendarioScreen>
           'Calendario',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           // Filtro dropdown
           Container(
