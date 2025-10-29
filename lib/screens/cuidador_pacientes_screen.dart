@@ -10,6 +10,7 @@ import '../models/invitacion_cuidador.dart';
 import '../widgets/dashboard_widgets.dart';
 import 'cuidador_dashboard.dart';
 import 'cuidador_recordatorios_screen.dart';
+import 'cuidador_calendario_paciente.dart';
 import 'ajustes.dart';
 
 class CuidadorPacientesScreen extends StatefulWidget {
@@ -561,6 +562,16 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                   ),
                 ),
                 PopupMenuItem(
+                  value: 'calendar',
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_month, size: 18, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('Calendario'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
                   value: 'stats',
                   child: Row(
                     children: [
@@ -596,6 +607,9 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         break;
       case 'reminders':
         _showPatientReminders(patient);
+        break;
+      case 'calendar':
+        _showPatientCalendar(patient);
         break;
       case 'stats':
         _showPatientStats(patient);
@@ -668,6 +682,17 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => CuidadorRecordatoriosPacienteDetalleScreen(
+          paciente: patient,
+        ),
+      ),
+    );
+  }
+
+  void _showPatientCalendar(UserModel patient) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CuidadorCalendarioPacienteScreen(
           paciente: patient,
         ),
       ),

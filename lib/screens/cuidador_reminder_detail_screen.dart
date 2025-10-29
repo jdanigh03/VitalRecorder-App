@@ -5,8 +5,9 @@ import '../services/cuidador_service.dart';
 
 class CuidadorReminderDetailScreen extends StatefulWidget {
   final ReminderNew reminder;
+  final dynamic paciente; // Puede ser UserModel o null
 
-  const CuidadorReminderDetailScreen({Key? key, required this.reminder}) : super(key: key);
+  const CuidadorReminderDetailScreen({Key? key, required this.reminder, this.paciente}) : super(key: key);
 
   @override
   State<CuidadorReminderDetailScreen> createState() => _CuidadorReminderDetailScreenState();
@@ -141,11 +142,11 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _buildInfoCard('Horario', _timeFormatter.format(_currentReminder.dateTime), Icons.access_time, const Color(0xFF4A90E2)),
+                  _buildInfoCard('Horario', _timeFormatter.format(_currentReminder.startDate), Icons.access_time, const Color(0xFF4A90E2)),
                   const SizedBox(height: 12),
-                  _buildInfoCard('Fecha', _dayFormatter.format(_currentReminder.dateTime), Icons.calendar_today, const Color(0xFF8E44AD)),
+                  _buildInfoCard('Fecha', _dayFormatter.format(_currentReminder.startDate), Icons.calendar_today, const Color(0xFF8E44AD)),
                   const SizedBox(height: 12),
-                  _buildInfoCard('Frecuencia', _currentReminder.frequency, Icons.repeat, const Color(0xFFE67E22)),
+                  _buildInfoCard('Frecuencia', _currentReminder.intervalDisplayText, Icons.repeat, const Color(0xFFE67E22)),
                   const SizedBox(height: 12),
                   _buildInfoCard('Tipo', _getTypeText(_currentReminder.type), _getTypeIcon(_currentReminder.type), const Color(0xFF27AE60)),
                   const SizedBox(height: 12),
@@ -222,67 +223,34 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
     }
   }
 
-  String _getStatusText(Reminder reminder) {
+  String _getStatusText(ReminderNew reminder) {
     if (!reminder.isActive) return 'ARCHIVADO';
-    if (reminder.isCompleted) return 'COMPLETADO';
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return 'FINALIZADO';
     
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
-    final isToday = reminderDate.isAtSameMomentAs(today);
-    
-    if (isToday) {
-      // Para hoy: omitido solo si la hora ya pasó
-      if (reminder.dateTime.isBefore(now)) {
-        // Verificar si fue creado después de la hora programada
-        final createdAt = reminder.createdAt?.toLocal();
-        if (createdAt != null && createdAt.isAfter(reminder.dateTime)) {
-          return 'PENDIENTE'; // Creado después de la hora, sigue pendiente
-        }
-        return 'OMITIDO';
-      }
-      return 'PENDIENTE';
-    } else if (reminderDate.isBefore(today)) {
-      // Para fechas pasadas: verificar si fue creado después de la hora programada
-      final createdAt = reminder.createdAt?.toLocal();
-      if (createdAt != null && createdAt.isAfter(reminder.dateTime)) {
-        return 'PENDIENTE'; // Creado después de la hora, sigue pendiente
-      }
-      return 'OMITIDO';
-    } else {
-      // Fecha futura
-      return 'PENDIENTE';
-    }
+    return nextOccurrence.isBefore(now) ? 'VENCIDO' : 'PENDIENTE';
   }
 
-  IconData _getStatusIcon(Reminder reminder) {
+  IconData _getStatusIcon(ReminderNew reminder) {
     if (!reminder.isActive) return Icons.archive;
-    if (reminder.isCompleted) return Icons.check_circle;
     
-    final statusText = _getStatusText(reminder);
-    switch (statusText) {
-      case 'OMITIDO':
-        return Icons.cancel;
-      case 'PENDIENTE':
-        return Icons.schedule;
-      default:
-        return Icons.schedule;
-    }
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Icons.check_circle;
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Icons.cancel : Icons.schedule;
   }
 
-  Color _getStatusColor(Reminder reminder) {
+  Color _getStatusColor(ReminderNew reminder) {
     if (!reminder.isActive) return Colors.grey;
-    if (reminder.isCompleted) return Colors.green;
     
-    final statusText = _getStatusText(reminder);
-    switch (statusText) {
-      case 'OMITIDO':
-        return Colors.red;
-      case 'PENDIENTE':
-        return Colors.orange;
-      default:
-        return Colors.orange;
-    }
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Colors.green;
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Colors.red : Colors.orange;
   }
 
   void _showArchiveDialog() {
