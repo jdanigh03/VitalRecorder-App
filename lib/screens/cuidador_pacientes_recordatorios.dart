@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/user.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../services/cuidador_service.dart';
 import 'cuidador_recordatorios_paciente_detalle.dart';
-import 'cuidador_crear_recordatorio.dart';
+import 'cuidador_crear_recordatorio_new.dart';
 
 class CuidadorPacientesRecordatoriosScreen extends StatefulWidget {
   @override
@@ -16,8 +16,8 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
   
   bool _isLoading = true;
   List<UserModel> _pacientes = [];
-  Map<String, List<Reminder>> _recordatoriosPorPaciente = {};
-  Map<String, Map<String, int>> _estadisticasPorPaciente = {};
+  Map<String, List<ReminderNew>> _recordatoriosPorPaciente = {};
+  Map<String, Map<String, dynamic>> _estadisticasPorPaciente = {};
 
   @override
   void initState() {
@@ -33,35 +33,16 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
       final pacientes = await _cuidadorService.getPacientesAsignados();
       
       // Cargar recordatorios para cada paciente
-      Map<String, List<Reminder>> recordatoriosPorPaciente = {};
-      Map<String, Map<String, int>> estadisticasPorPaciente = {};
+      Map<String, List<ReminderNew>> recordatoriosPorPaciente = {};
+      Map<String, Map<String, dynamic>> estadisticasPorPaciente = {};
       
       for (final paciente in pacientes) {
         final recordatorios = await _cuidadorService.getRecordatoriosPaciente(paciente.userId!);
         recordatoriosPorPaciente[paciente.userId!] = recordatorios;
         
-        // Calcular estadísticas con TZ y createdAt
-        final ahora = DateTime.now();
-        int total = recordatorios.length;
-        int completados = recordatorios.where((r) => r.isCompleted).length;
-        int pendientes = 0;
-        int vencidos = 0;
-        for (final r in recordatorios) {
-          final dt = r.dateTime.toLocal();
-          final ca = r.createdAt?.toLocal();
-          final sameDay = dt.year == ahora.year && dt.month == ahora.month && dt.day == ahora.day;
-          final createdAfterSchedule = sameDay && ca != null && ca.isAfter(dt);
-          if (!r.isCompleted && (dt.isAfter(ahora) || createdAfterSchedule)) pendientes++;
-          if (!r.isCompleted && dt.isBefore(ahora) && !createdAfterSchedule) vencidos++;
-        }
-        
-        estadisticasPorPaciente[paciente.userId!] = {
-          'total': total,
-          'completados': completados,
-          'pendientes': pendientes,
-          'vencidos': vencidos,
-          'adherencia': total > 0 ? ((completados / total) * 100).round() : 0,
-        };
+        // Usar nuevas estadísticas
+        final stats = await _cuidadorService.getEstadisticasPaciente(paciente.userId!);
+        estadisticasPorPaciente[paciente.userId!] = stats;
       }
       
       setState(() {
@@ -238,14 +219,14 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
   Widget _buildResumenGeneral() {
     final totalPacientes = _pacientes.length;
     final totalRecordatorios = _estadisticasPorPaciente.values
-        .map((stats) => stats['total'] ?? 0)
-        .fold(0, (a, b) => a + b);
+        .map((stats) => (stats['totalRecordatorios'] ?? 0) as int)
+        .fold<int>(0, (a, b) => a + b);
     final totalVencidos = _estadisticasPorPaciente.values
-        .map((stats) => stats['vencidos'] ?? 0)
-        .fold(0, (a, b) => a + b);
+        .map((stats) => (stats['vencidos'] ?? 0) as int)
+        .fold<int>(0, (a, b) => a + b);
     final totalPendientes = _estadisticasPorPaciente.values
-        .map((stats) => stats['pendientes'] ?? 0)
-        .fold(0, (a, b) => a + b);
+        .map((stats) => (stats['pendientes'] ?? 0) as int)
+        .fold<int>(0, (a, b) => a + b);
 
     return Container(
       margin: EdgeInsets.all(16),
@@ -331,7 +312,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
     );
   }
 
-  Widget _buildPacienteCard(UserModel paciente, Map<String, int> estadisticas) {
+  Widget _buildPacienteCard(UserModel paciente, Map<String, dynamic> estadisticas) {
     final total = estadisticas['total'] ?? 0;
     final pendientes = estadisticas['pendientes'] ?? 0;
     final vencidos = estadisticas['vencidos'] ?? 0;
@@ -577,7 +558,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => CuidadorCrearRecordatorioScreen(
+                      builder: (context) => CuidadorCrearRecordatorioNewScreen(
                         pacienteId: paciente.userId!,
                         paciente: paciente,
                       ),

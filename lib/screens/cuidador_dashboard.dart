@@ -158,7 +158,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
         print('Usuario es CUIDADOR - Cargando recordatorios de ${pacientesAsignados.length} pacientes');
         
         for (final paciente in pacientesAsignados) {
-          final reminders = await _reminderService.getRemindersByPatient(paciente.userId);
+          final reminders = await _reminderService.getRemindersByPatient(paciente.userId!);
           
           // Filtrar solo recordatorios con ocurrencias hoy
           for (final reminder in reminders) {
@@ -328,8 +328,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     // Usar _todayReminders que ya viene filtrado y ordenado
     final todayReminders = _todayReminders;
 
-    final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
-    final completedCount = todayReminders.where((r) => r.isCompleted).length;
+    // TODO: Implementar conteo basado en confirmaciones
+    final pendingCount = todayReminders.length;
+    final completedCount = 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -863,31 +864,32 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   Widget _buildReminderCard(ReminderNew reminder) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
+    
+    // Usar siguiente ocurrencia o primera ocurrencia del día
+    final nextOccurrence = reminder.getNextOccurrence();
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    final displayTime = nextOccurrence ?? (todayOccurrences.isNotEmpty ? todayOccurrences.first : DateTime.now());
+    
     final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
+    final rd = DateTime(displayTime.year, displayTime.month, displayTime.day);
     final isToday = rd.isAtSameMomentAs(today);
     
-    // Lógica corregida: consistente con la lógica de clasificación arreglada
+    // Lógica corregida: TODO - implementar verificación con confirmaciones
     bool isVencido = false;
-    bool isPendiente = false;
+    bool isPendiente = true;
     
-    if (!reminder.isCompleted) {
-      if (isToday) {
-        // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = dt.isBefore(now) && !createdAfterSchedule;
-        isPendiente = dt.isAfter(now) || createdAfterSchedule;
-      } else if (rd.isBefore(today)) {
-        // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = !createdAfterSchedule;
-        isPendiente = createdAfterSchedule;
-      } else {
-        // Fecha futura
-        isPendiente = true;
-        isVencido = false;
-      }
+    if (isToday) {
+      // Para hoy: vencido si la hora ya pasó
+      isVencido = displayTime.isBefore(now);
+      isPendiente = displayTime.isAfter(now);
+    } else if (rd.isBefore(today)) {
+      // Para fechas pasadas: vencido
+      isVencido = true;
+      isPendiente = false;
+    } else {
+      // Fecha futura
+      isPendiente = true;
+      isVencido = false;
     }
     
     // Para mantener compatibilidad con el código existente
@@ -903,14 +905,12 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: reminder.isCompleted
-                ? Colors.green.withOpacity(0.3)
-                : isVencido 
-                    ? Colors.red.withOpacity(0.3)
-                    : isPendiente
-                        ? Colors.orange.withOpacity(0.3)
-                        : Colors.transparent,
-            width: reminder.isCompleted || isVencido || isPendiente ? 2 : 0,
+            color: isVencido 
+                ? Colors.red.withOpacity(0.3)
+                : isPendiente
+                    ? Colors.orange.withOpacity(0.3)
+                    : Colors.transparent,
+            width: isVencido || isPendiente ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -992,9 +992,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1005,9 +1002,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey[600],
-                              decoration: reminder.isCompleted 
-                                  ? TextDecoration.lineThrough 
-                                  : null,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1030,7 +1024,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  '${displayTime.hour}:${displayTime.minute.toString().padLeft(2, '0')}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -1049,7 +1043,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  reminder.frequency,
+                                  reminder.intervalDisplayText,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -1068,24 +1062,18 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   Container(
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: reminder.isCompleted 
-                          ? Colors.green.withOpacity(0.1)
-                          : isVencido 
-                              ? Colors.red.withOpacity(0.1)
-                              : Colors.orange.withOpacity(0.1),
+                      color: isVencido 
+                          ? Colors.red.withOpacity(0.1)
+                          : Colors.orange.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      reminder.isCompleted 
-                          ? Icons.check_circle
-                          : isVencido 
-                              ? Icons.error
-                              : Icons.schedule,
-                      color: reminder.isCompleted 
-                          ? Colors.green
-                          : isVencido 
-                              ? Colors.red
-                              : Colors.orange,
+                      isVencido 
+                          ? Icons.error
+                          : Icons.schedule,
+                      color: isVencido 
+                          ? Colors.red
+                          : Colors.orange,
                       size: 32,
                     ),
                   ),
@@ -1176,7 +1164,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
 
 
-  void _showReminderDetails(Reminder reminder) {
+  void _showReminderDetails(ReminderNew reminder) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1189,9 +1177,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             SizedBox(height: 8),
             Text('Tipo: ${reminder.type}'),
             SizedBox(height: 8),
-            Text('Fecha: ${reminder.dateTime.toString()}'),
+            Text('Rango: ${reminder.dateRangeText}'),
             SizedBox(height: 8),
-            Text('Estado: ${reminder.isCompleted ? 'Completado' : 'Pendiente'}'),
+            Text('Intervalo: ${reminder.intervalDisplayText}'),
           ],
         ),
         actions: [

@@ -7,8 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/bracelet_device.dart';
-import '../models/reminder.dart';
-import 'reminder_service.dart';
+import '../models/reminder_new.dart';
+import '../reminder_service_new.dart';
 import 'background_ble_service_simple.dart';
 import 'bracelet_storage_service.dart';
 
@@ -68,43 +68,31 @@ class BraceletService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final reminderService = ReminderService();
+      final reminderService = ReminderServiceNew();
       final allReminders = await reminderService.getAllReminders();
       
-      // Expandir recordatorios según su frecuencia para hoy
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       
-      List<Reminder> validReminders = [];
+      // Obtener todas las ocurrencias de hoy de todos los recordatorios activos
+      List<Map<String, dynamic>> todayOccurrences = [];
       
       for (final reminder in allReminders) {
-        final reminderInstances = _generateReminderInstancesForToday(reminder, today);
-        validReminders.addAll(reminderInstances);
-      }
-      
-      print("Total recordatorios activos: ${allReminders.length}");
-      print("Recordatorios válidos para enviar a manilla: ${validReminders.length}");
-      
-      // Desactivar recordatorios del pasado (opcional, para limpiar la DB)
-      final obsoleteReminders = allReminders.where((reminder) {
-        final reminderDate = DateTime(
-          reminder.dateTime.year, 
-          reminder.dateTime.month, 
-          reminder.dateTime.day
-        );
-        return reminderDate.isBefore(today);
-      }).toList();
-      
-      if (obsoleteReminders.isNotEmpty) {
-        print("Desactivando ${obsoleteReminders.length} recordatorios obsoletos...");
-        for (final obsoleteReminder in obsoleteReminders) {
-          try {
-            await reminderService.deactivateReminder(obsoleteReminder.id);
-          } catch (e) {
-            print("Error desactivando recordatorio ${obsoleteReminder.id}: $e");
+        if (reminder.hasOccurrencesOnDay(today)) {
+          // Agregar todas las ocurrencias del día
+          for (final time in reminder.dailyScheduleTimes) {
+            todayOccurrences.add({
+              'hour': time.hour,
+              'minute': time.minute,
+              'title': reminder.title,
+              'reminderId': reminder.id,
+            });
           }
         }
       }
+      
+      print("Total recordatorios activos: ${allReminders.length}");
+      print("Ocurrencias válidas para enviar a manilla hoy: ${todayOccurrences.length}");
 
       // 1. Sincronizar la hora actual
       await sendCommand(BraceletCommand.syncTime());
@@ -114,20 +102,20 @@ class BraceletService extends ChangeNotifier {
       await sendCommand(BraceletCommand.clearReminders);
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // 3. Enviar cada recordatorio válido
-      for (final reminder in validReminders) {
+      // 3. Enviar cada ocurrencia válida
+      for (final occ in todayOccurrences) {
         final command = BraceletCommand.addReminder(
-          reminder.dateTime.hour,
-          reminder.dateTime.minute,
-          reminder.title,
+          occ['hour'] as int,
+          occ['minute'] as int,
+          occ['title'] as String,
         );
         await sendCommand(command);
-        await Future.delayed(const Duration(milliseconds: 200)); // Pequeña pausa
+        await Future.delayed(const Duration(milliseconds: 200));
       }
 
     } catch (e) {
       print("Error sincronizando recordatorios: $e");
-      rethrow; // Propagar el error a la UI
+      rethrow;
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -372,117 +360,6 @@ class BraceletService extends ChangeNotifier {
     }
   }
   
-  /// Generar instancias de recordatorios para hoy según su frecuencia
-  List<Reminder> _generateReminderInstancesForToday(Reminder reminder, DateTime today) {
-    final List<Reminder> instances = [];
-    
-    // Verificar si el recordatorio debe activarse hoy según su frecuencia
-    final reminderDate = DateTime(
-      reminder.dateTime.year,
-      reminder.dateTime.month, 
-      reminder.dateTime.day
-    );
-    
-    // Si es una fecha futura, no incluir hoy
-    if (reminderDate.isAfter(today)) {
-      return instances;
-    }
-    
-    // Si es una fecha pasada, verificar frecuencia
-    switch (reminder.frequency.toLowerCase()) {
-      case 'diario':
-        // Solo si la fecha original es hoy o anterior
-        if (reminderDate.isBefore(today) || reminderDate.isAtSameMomentAs(today)) {
-          instances.add(reminder.copyWith(
-            dateTime: DateTime(
-              today.year,
-              today.month, 
-              today.day,
-              reminder.dateTime.hour,
-              reminder.dateTime.minute
-            )
-          ));
-        }
-        break;
-        
-      case 'cada 8 horas':
-        if (reminderDate.isBefore(today) || reminderDate.isAtSameMomentAs(today)) {
-          // Generar 3 instancias: hora original, +8h, +16h
-          for (int i = 0; i < 3; i++) {
-            final instanceTime = reminder.dateTime.add(Duration(hours: 8 * i));
-            instances.add(reminder.copyWith(
-              dateTime: DateTime(
-                today.year,
-                today.month,
-                today.day,
-                instanceTime.hour,
-                instanceTime.minute
-              )
-            ));
-          }
-        }
-        break;
-        
-      case 'cada 12 horas':
-        if (reminderDate.isBefore(today) || reminderDate.isAtSameMomentAs(today)) {
-          // Generar 2 instancias: hora original, +12h
-          for (int i = 0; i < 2; i++) {
-            final instanceTime = reminder.dateTime.add(Duration(hours: 12 * i));
-            instances.add(reminder.copyWith(
-              dateTime: DateTime(
-                today.year,
-                today.month,
-                today.day,
-                instanceTime.hour,
-                instanceTime.minute
-              )
-            ));
-          }
-        }
-        break;
-        
-      case 'semanal':
-        // Solo si ha pasado al menos una semana o es el día original
-        final daysSinceOriginal = today.difference(reminderDate).inDays;
-        if (daysSinceOriginal >= 0 && daysSinceOriginal % 7 == 0) {
-          instances.add(reminder.copyWith(
-            dateTime: DateTime(
-              today.year,
-              today.month,
-              today.day, 
-              reminder.dateTime.hour,
-              reminder.dateTime.minute
-            )
-          ));
-        }
-        break;
-        
-      case 'mensual':
-        // Solo si es el mismo día del mes
-        if (today.day == reminder.dateTime.day && 
-            (today.isAfter(reminderDate) || today.isAtSameMomentAs(reminderDate))) {
-          instances.add(reminder.copyWith(
-            dateTime: DateTime(
-              today.year,
-              today.month,
-              today.day,
-              reminder.dateTime.hour, 
-              reminder.dateTime.minute
-            )
-          ));
-        }
-        break;
-        
-      default: // 'Una vez' o 'Personalizado'
-        // Solo si es exactamente hoy
-        if (reminderDate.isAtSameMomentAs(today)) {
-          instances.add(reminder);
-        }
-        break;
-    }
-    
-    return instances;
-  }
 
   /// Manejar cambios de estado de conexión
   void _handleConnectionStateChange(BluetoothConnectionState state) {
@@ -569,70 +446,73 @@ class BraceletService extends ChangeNotifier {
       print('[HANDLE] 🔴 Iniciando manejo de recordatorio completado por botón');
       print('[HANDLE] 🔢 Índice recibido: $reminderIndex');
       
-      // Obtener recordatorios activos para encontrar el que corresponde al índice
-      final reminderService = ReminderService();
+      final reminderService = ReminderServiceNew();
       final allReminders = await reminderService.getAllReminders();
       print('[HANDLE] 📄 Total recordatorios en BD: ${allReminders.length}');
       
-      // Filtrar solo recordatorios de hoy para sincronizar con los enviados a la manilla
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       
-      final validReminders = allReminders.where((reminder) {
-        final reminderDate = DateTime(
-          reminder.dateTime.year, 
-          reminder.dateTime.month, 
-          reminder.dateTime.day
-        );
-        return reminderDate.isAtSameMomentAs(today) || reminderDate.isAfter(today);
-      }).toList();
+      // Obtener todas las ocurrencias de hoy en orden
+      List<Map<String, dynamic>> todayOccurrences = [];
       
-      print('[HANDLE] 📅 Recordatorios válidos para hoy: ${validReminders.length}');
-      
-      // Aplicar la misma lógica de generación de instancias que en syncRemindersToBracelet
-      List<Reminder> syncedReminders = [];
-      for (final reminder in validReminders) {
-        final reminderInstances = _generateReminderInstancesForToday(reminder, today);
-        syncedReminders.addAll(reminderInstances);
+      for (final reminder in allReminders) {
+        if (reminder.hasOccurrencesOnDay(today)) {
+          for (final time in reminder.dailyScheduleTimes) {
+            final occurrenceTime = DateTime(
+              today.year,
+              today.month,
+              today.day,
+              time.hour,
+              time.minute,
+            );
+            todayOccurrences.add({
+              'reminderId': reminder.id,
+              'title': reminder.title,
+              'scheduledTime': occurrenceTime,
+            });
+          }
+        }
       }
       
-      print('[HANDLE] 🔄 Recordatorios sincronizados: ${syncedReminders.length}');
-      for (int i = 0; i < syncedReminders.length; i++) {
-        print('[HANDLE] [$i] ${syncedReminders[i].title} - ${syncedReminders[i].id}');
-      }
+      print('[HANDLE] 📅 Ocurrencias para hoy: ${todayOccurrences.length}');
       
-      // Encontrar el recordatorio correspondiente al índice
-      if (reminderIndex < syncedReminders.length) {
-        final completedReminder = syncedReminders[reminderIndex];
-        print('[HANDLE] ✅ Recordatorio encontrado: "${completedReminder.title}" (ID: ${completedReminder.id})');
+      // Encontrar la ocurrencia correspondiente al índice
+      if (reminderIndex < todayOccurrences.length) {
+        final occurrence = todayOccurrences[reminderIndex];
+        final reminderId = occurrence['reminderId'] as String;
+        final title = occurrence['title'] as String;
+        final scheduledTime = occurrence['scheduledTime'] as DateTime;
         
-        // Marcar como completado en Firestore
-        final success = await reminderService.markAsCompleted(completedReminder.id, true);
+        print('[HANDLE] ✅ Ocurrencia encontrada: "$title" programada a ${scheduledTime.hour}:${scheduledTime.minute}');
+        
+        // Confirmar en el sistema nuevo
+        final success = await reminderService.confirmReminder(
+          reminderId: reminderId,
+          scheduledTime: scheduledTime,
+          notes: 'Confirmado desde manilla',
+        );
         
         if (success) {
-          print('[HANDLE] 🎆 ¡Recordatorio "${completedReminder.title}" marcado como completado en Firestore!');
+          print('[HANDLE] 🎆 ¡Recordatorio "$title" confirmado!');
           
-          // Mostrar notificación de recordatorio completado
-          await BackgroundBleService.showReminderCompletedNotification(completedReminder.title);
+          await BackgroundBleService.showReminderCompletedNotification(title);
           print('[HANDLE] 🔔 Notificación enviada');
           
-          // Limpiar estado de recordatorio activo
           _activeReminderIndex = null;
           _activeReminderTitle = null;
           
-          // Notificar a los listeners que hubo un cambio
           notifyListeners();
           print('[HANDLE] 📡 Listeners notificados');
         } else {
-          print('[HANDLE] ❌ Error marcando recordatorio como completado en Firestore');
+          print('[HANDLE] ❌ Error confirmando recordatorio');
         }
       } else {
-        print('[HANDLE] ⚠️ Índice de recordatorio $reminderIndex fuera de rango (max: ${syncedReminders.length - 1})');
+        print('[HANDLE] ⚠️ Índice $reminderIndex fuera de rango (max: ${todayOccurrences.length - 1})');
       }
       
     } catch (e) {
       print('[HANDLE] 💥 Error manejando confirmación por botón: $e');
-      print('[HANDLE] Stack trace: ${StackTrace.current}');
     }
   }
   
@@ -641,36 +521,32 @@ class BraceletService extends ChangeNotifier {
     try {
       print('Recordatorio $reminderIndex activado en la manilla');
       
-      // Obtener información del recordatorio para mostrar en la UI
-      final reminderService = ReminderService();
+      final reminderService = ReminderServiceNew();
       final allReminders = await reminderService.getAllReminders();
       
-      // Filtrar y generar instancias igual que en la sincronización
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       
-      final validReminders = allReminders.where((reminder) {
-        final reminderDate = DateTime(
-          reminder.dateTime.year, 
-          reminder.dateTime.month, 
-          reminder.dateTime.day
-        );
-        return reminderDate.isAtSameMomentAs(today) || reminderDate.isAfter(today);
-      }).toList();
+      // Obtener todas las ocurrencias de hoy
+      List<Map<String, dynamic>> todayOccurrences = [];
       
-      List<Reminder> syncedReminders = [];
-      for (final reminder in validReminders) {
-        final reminderInstances = _generateReminderInstancesForToday(reminder, today);
-        syncedReminders.addAll(reminderInstances);
+      for (final reminder in allReminders) {
+        if (reminder.hasOccurrencesOnDay(today)) {
+          for (final time in reminder.dailyScheduleTimes) {
+            todayOccurrences.add({
+              'title': reminder.title,
+            });
+          }
+        }
       }
       
       // Actualizar estado del recordatorio activo
-      if (reminderIndex < syncedReminders.length) {
-        final activeReminder = syncedReminders[reminderIndex];
+      if (reminderIndex < todayOccurrences.length) {
+        final occurrence = todayOccurrences[reminderIndex];
         _activeReminderIndex = reminderIndex;
-        _activeReminderTitle = activeReminder.title;
+        _activeReminderTitle = occurrence['title'] as String;
         
-        print('Recordatorio activo: "${activeReminder.title}"');
+        print('Recordatorio activo: "${_activeReminderTitle}"');
       }
       
       notifyListeners();

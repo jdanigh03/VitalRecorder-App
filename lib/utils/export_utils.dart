@@ -7,7 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:intl/intl.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 
 class ExportUtils {
@@ -17,7 +17,7 @@ class ExportUtils {
 
   /// Genera un reporte PDF con estadísticas de adherencia
   static Future<void> generatePDF({
-    required List<Reminder> reminders,
+    required List<ReminderNew> reminders,
     required DateTime startDate,
     required DateTime endDate,
     String? patientName,
@@ -77,29 +77,29 @@ class ExportUtils {
 
   /// Genera archivo CSV con los datos de recordatorios
   static Future<void> generateCSV({
-    required List<Reminder> reminders,
+    required List<ReminderNew> reminders,
     required DateTime startDate,
     required DateTime endDate,
   }) async {
     try {
       // Ordenar recordatorios por fecha
-      final sortedReminders = List<Reminder>.from(reminders)
-        ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      final sortedReminders = List<ReminderNew>.from(reminders)
+        ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
       // Crear datos CSV
       List<List<dynamic>> csvData = [
-        ['Fecha', 'Hora', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Estado', 'Frecuencia']
+        ['Fecha Inicio', 'Fecha Fin', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Intervalo', 'Horarios']
       ];
 
       for (final reminder in sortedReminders) {
         csvData.add([
-          _dateFormat.format(reminder.dateTime),
-          _timeFormat.format(reminder.dateTime),
+          _dateFormat.format(reminder.startDate),
+          _dateFormat.format(reminder.endDate),
           reminder.title,
           reminder.description,
           _getTypeText(reminder.type),
-          _getStatusText(reminder),
-          reminder.frequency,
+          reminder.intervalDisplayText,
+          reminder.dailyScheduleTimes.map((t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}').join(', '),
         ]);
       }
 
@@ -239,10 +239,10 @@ class ExportUtils {
   }
 
   /// Construye la tabla de recordatorios
-  static pw.Widget _buildRemindersTable(List<Reminder> reminders) {
+  static pw.Widget _buildRemindersTable(List<ReminderNew> reminders) {
     // Ordenar por fecha
-    final sortedReminders = List<Reminder>.from(reminders)
-      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final sortedReminders = List<ReminderNew>.from(reminders)
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -280,11 +280,11 @@ class ExportUtils {
             // Data rows
             ...sortedReminders.map((reminder) => pw.TableRow(
               children: [
-                _buildTableCell(_dateFormat.format(reminder.dateTime)),
-                _buildTableCell(_timeFormat.format(reminder.dateTime)),
+                _buildTableCell(_dateFormat.format(reminder.startDate)),
+                _buildTableCell(reminder.dateRangeText),
                 _buildTableCell(reminder.title),
                 _buildTableCell(reminder.description),
-                _buildTableCell(_getStatusText(reminder)),
+                _buildTableCell(reminder.isActive ? 'ACTIVO' : 'FINALIZADO'),
               ],
             )),
           ],
@@ -344,41 +344,16 @@ class ExportUtils {
   }
 
   /// Calcula estadísticas de adherencia usando la lógica real de vencimientos
-  static Map<String, dynamic> _calculateStatistics(List<Reminder> reminders) {
+  static Map<String, dynamic> _calculateStatistics(List<ReminderNew> reminders) {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
     final total = reminders.length;
-    final completed = reminders.where((r) => r.isCompleted).length;
+    final active = reminders.where((r) => r.isActive).length;
+    final completed = reminders.where((r) => !r.isActive && r.endDate.isBefore(now)).length;
+    final missed = 0; // Requiere consultar confirmaciones
+    final pending = active;
     
-    // Usar la lógica real para determinar vencidos (considerando createdAt)
-    final missed = reminders.where((r) {
-      if (r.isCompleted) return false;
-      
-      final dt = r.dateTime.toLocal();
-      final ca = r.createdAt?.toLocal();
-      final rd = DateTime(dt.year, dt.month, dt.day);
-      final isToday = rd.isAtSameMomentAs(today);
-      
-      bool isVencido = false;
-      
-      if (isToday) {
-        // Para hoy: vencido si la hora ya pasó, excepto si se creó después
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = dt.isBefore(now) && !createdAfterSchedule;
-      } else if (rd.isBefore(today)) {
-        // Para fechas pasadas: vencido solo si NO fue creado después
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = !createdAfterSchedule;
-      }
-      
-      return isVencido;
-    }).length;
-    
-    final pending = total - completed - missed;
-    
-    // Calcular adherencia solo sobre recordatorios que debieron ocurrir
-    final shouldHaveOccurred = completed + missed;
-    final adherenceRate = shouldHaveOccurred > 0 ? ((completed / shouldHaveOccurred) * 100).round() : 0;
+    // Calcular adherencia simplificada
+    final adherenceRate = total > 0 ? ((completed / total) * 100).round() : 0;
 
     return {
       'total': total,
@@ -390,29 +365,14 @@ class ExportUtils {
   }
 
   /// Convierte el estado del recordatorio a texto usando lógica real
-  static String _getStatusText(Reminder reminder) {
-    if (reminder.isCompleted) return 'COMPLETADO';
-    
+  static String _getStatusText(ReminderNew reminder) {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
-    final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
-    final isToday = rd.isAtSameMomentAs(today);
     
-    bool isVencido = false;
+    if (!reminder.isActive) return 'FINALIZADO';
+    if (reminder.endDate.isBefore(now)) return 'VENCIDO';
+    if (reminder.startDate.isAfter(now)) return 'PROGRAMADO';
     
-    if (isToday) {
-      // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = dt.isBefore(now) && !createdAfterSchedule;
-    } else if (rd.isBefore(today)) {
-      // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = !createdAfterSchedule;
-    }
-    
-    return isVencido ? 'OMITIDO' : 'PENDIENTE';
+    return 'ACTIVO';
   }
 
   /// Convierte el tipo del recordatorio a texto
@@ -440,7 +400,7 @@ class ExportUtils {
   /// Genera reporte PDF completo para cuidador con todos los pacientes
   static Future<void> generateCuidadorCompletePDF({
     required List<UserModel> pacientes,
-    required List<Reminder> allReminders,
+    required List<ReminderNew> allReminders,
     required DateTime startDate,
     required DateTime endDate,
     required Map<String, dynamic> stats,
@@ -502,7 +462,7 @@ class ExportUtils {
   /// Genera reporte PDF específico de un paciente para el cuidador
   static Future<void> generateCuidadorPatientPDF({
     required UserModel paciente,
-    required List<Reminder> patientReminders,
+    required List<ReminderNew> patientReminders,
     required DateTime startDate,
     required DateTime endDate,
   }) async {
@@ -565,14 +525,14 @@ class ExportUtils {
   /// Genera archivo Excel/CSV consolidado para el cuidador
   static Future<void> generateCuidadorExcel({
     required List<UserModel> pacientes,
-    required List<Reminder> allReminders,
+    required List<ReminderNew> allReminders,
     required DateTime startDate,
     required DateTime endDate,
     Map<String, dynamic>? options,
   }) async {
     try {
-      final sortedReminders = List<Reminder>.from(allReminders)
-        ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      final sortedReminders = List<ReminderNew>.from(allReminders)
+        ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
       // Crear datos CSV con información del paciente
       List<List<dynamic>> csvData = [];
@@ -604,20 +564,20 @@ class ExportUtils {
           csvData.add([
             paciente.persona.nombres + ' ' + paciente.persona.apellidos,
             paciente.email,
-            _dateFormat.format(reminder.dateTime),
-            _timeFormat.format(reminder.dateTime),
+            _dateFormat.format(reminder.startDate),
+            _dateFormat.format(reminder.endDate),
             reminder.title,
             reminder.description,
             _getTypeText(reminder.type),
             _getStatusText(reminder),
-            reminder.frequency,
-            reminder.createdAt != null ? _dateFormat.format(reminder.createdAt!) : 'N/A',
+            reminder.intervalDisplayText,
+            'N/A',
           ]);
         } else {
           csvData.add([
             paciente.persona.nombres + ' ' + paciente.persona.apellidos,
-            _dateFormat.format(reminder.dateTime),
-            _timeFormat.format(reminder.dateTime),
+            _dateFormat.format(reminder.startDate),
+            _dateFormat.format(reminder.endDate),
             reminder.title,
             _getStatusText(reminder),
           ]);
@@ -835,7 +795,7 @@ class ExportUtils {
     );
   }
 
-  static pw.Widget _buildCuidadorGeneralStats(Map<String, dynamic> stats, List<Reminder> allReminders) {
+  static pw.Widget _buildCuidadorGeneralStats(Map<String, dynamic> stats, List<ReminderNew> allReminders) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(16),
       decoration: pw.BoxDecoration(
@@ -868,7 +828,7 @@ class ExportUtils {
     );
   }
 
-  static pw.Widget _buildCuidadorPatientAnalysis(List<UserModel> pacientes, List<Reminder> allReminders) {
+  static pw.Widget _buildCuidadorPatientAnalysis(List<UserModel> pacientes, List<ReminderNew> allReminders) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [

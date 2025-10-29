@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import '../services/cuidador_service.dart';
 import '../services/analytics_service.dart';
 import '../services/reports_cache.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
 import '../widgets/chart_widgets.dart';
@@ -24,7 +24,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   bool _isLoading = false;
   Map<String, dynamic> _stats = {};
   List<UserModel> _pacientes = [];
-  List<Reminder> _reminders = [];
+  List<ReminderNew> _reminders = [];
   List<Map<String, dynamic>> _trendData = [];
   List<Map<String, dynamic>> _patientStats = [];
   Map<String, dynamic> _typeDistribution = {};
@@ -65,7 +65,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           _cuidadorService.getAllRemindersFromPatients(),
         ]);
         pacientes = results[0] as List<UserModel>;
-        reminders = results[1] as List<Reminder>;
+        reminders = results[1] as List<ReminderNew>;
         
         // Actualizar cache
         _cache.updateCache(pacientes, reminders);
@@ -100,9 +100,9 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       
       // Filtrar recordatorios por período y filtros avanzados
       final filteredReminders = reminders.where((r) {
-        // Filtro por período
-        if (!r.dateTime.isAfter(_startDate.subtract(Duration(seconds: 1))) ||
-            !r.dateTime.isBefore(_endDate.add(Duration(days: 1)))) {
+        // Filtro por período (usar startDate del recordatorio)
+        if (!r.startDate.isAfter(_startDate.subtract(Duration(seconds: 1))) ||
+            !r.startDate.isBefore(_endDate.add(Duration(days: 1)))) {
           return false;
         }
         
@@ -928,11 +928,10 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   /// Aplica filtros avanzados a la lista de recordatorios
-  List<Reminder> _applyAdvancedFilters(List<Reminder> reminders) {
+  List<ReminderNew> _applyAdvancedFilters(List<ReminderNew> reminders) {
     return reminders.where((r) {
-      // Filtro por período
-      if (!r.dateTime.isAfter(_startDate.subtract(Duration(seconds: 1))) ||
-          !r.dateTime.isBefore(_endDate.add(Duration(days: 1)))) {
+      // Filtro por período - verificar si el rango del recordatorio intersecta con el período
+      if (r.endDate.isBefore(_startDate) || r.startDate.isAfter(_endDate.add(Duration(days: 1)))) {
         return false;
       }
       
@@ -1208,8 +1207,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       // Filtrar recordatorios del paciente en el período
       final patientReminders = _reminders.where((r) => 
         r.userId == paciente.id &&
-        r.dateTime.isAfter(_startDate.subtract(Duration(days: 1))) &&
-        r.dateTime.isBefore(_endDate.add(Duration(days: 1)))
+        !(r.endDate.isBefore(_startDate) || r.startDate.isAfter(_endDate.add(Duration(days: 1))))
       ).toList();
 
       await ExportUtils.generateCuidadorPatientPDF(

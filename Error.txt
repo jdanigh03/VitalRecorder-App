@@ -1,0 +1,31 @@
+E/flutter ( 7407): [ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: Could not find a generator for route RouteSettings("/paciente_confirmaciones", null) in the _WidgetsAppState.
+E/flutter ( 7407): Make sure your root app widget has provided a way to generate
+E/flutter ( 7407): this route.
+E/flutter ( 7407): Generators for routes are searched for in the following order:
+E/flutter ( 7407):  1. For the "/" route, the "home" property, if non-null, is used.
+E/flutter ( 7407):  2. Otherwise, the "routes" table is used, if it has an entry for the route.
+E/flutter ( 7407):  3. Otherwise, onGenerateRoute is called. It should return a non-null value for any valid route not handled by "home" and "routes".
+E/flutter ( 7407):  4. Finally if all else fails onUnknownRoute is called.
+E/flutter ( 7407): Unfortunately, onUnknownRoute was not set.
+E/flutter ( 7407): #0      _WidgetsAppState._onUnknownRoute.<anonymous closure> (package:flutter/src/widgets/app.dart:1570:9)
+E/flutter ( 7407): #1      _WidgetsAppState._onUnknownRoute (package:flutter/src/widgets/app.dart:1585:6)
+E/flutter ( 7407): #2      NavigatorState._routeNamed (package:flutter/src/widgets/navigator.dart:4664:37)
+E/flutter ( 7407): #3      NavigatorState.pushNamed (package:flutter/src/widgets/navigator.dart:4711:21)
+E/flutter ( 7407): #4      Navigator.pushNamed (package:flutter/src/widgets/navigator.dart:1905:34)
+E/flutter ( 7407): #5      _WelcomeScreenState._buildReminderCard.<anonymous closure> (package:vital_recorder_app/screens/welcome.dart:925:21)
+E/flutter ( 7407): #6      GestureRecognizer.invokeCallback (package:flutter/src/gestures/recognizer.dart:345:24)
+E/flutter ( 7407): #7      TapGestureRecognizer.handleTapUp (package:flutter/src/gestures/tap.dart:758:11)
+E/flutter ( 7407): #8      BaseTapGestureRecognizer._checkUp (package:flutter/src/gestures/tap.dart:383:5)
+E/flutter ( 7407): #9      BaseTapGestureRecognizer.acceptGesture (package:flutter/src/gestures/tap.dart:353:7)
+E/flutter ( 7407): #10     GestureArenaManager.sweep (package:flutter/src/gestures/arena.dart:173:27)
+E/flutter ( 7407): #11     GestureBinding.handleEvent (package:flutter/src/gestures/binding.dart:532:20)
+E/flutter ( 7407): #12     GestureBinding.dispatchEvent (package:flutter/src/gestures/binding.dart:498:22)
+E/flutter ( 7407): #13     RendererBinding.dispatchEvent (package:flutter/src/rendering/binding.dart:473:11)
+E/flutter ( 7407): #14     GestureBinding._handlePointerEventImmediately (package:flutter/src/gestures/binding.dart:437:7)
+E/flutter ( 7407): #15     GestureBinding.handlePointerEvent (package:flutter/src/gestures/binding.dart:394:5)
+E/flutter ( 7407): #16     GestureBinding._flushPointerEventQueue (package:flutter/src/gestures/binding.dart:341:7)
+E/flutter ( 7407): #17     GestureBinding._handlePointerDataPacket (package:flutter/src/gestures/binding.dart:308:9)
+E/flutter ( 7407): #18     _invoke1 (dart:ui/hooks.dart:346:13)
+E/flutter ( 7407): #19     PlatformDispatcher._dispatchPointerDataPacket (dart:ui/platform_dispatcher.dart:467:7)
+E/flutter ( 7407): #20     _dispatchPointerDataPacket (dart:ui/hooks.dart:281:31)
+E/flutter ( 7407):

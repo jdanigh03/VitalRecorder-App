@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/reminder_new.dart';
 import '../reminder_service_new.dart';
 import 'detalle_recordatorio_new.dart';
-import 'agregar_recordatorio.dart';
+import 'agregar_recordatorio_new.dart';
 import 'welcome.dart'; 
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
@@ -300,7 +300,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => AgregarRecordatorioScreen(),
+              builder: (context) => AgregarRecordatorioNewScreen(),
             ),
           );
           setState(() {}); // Forzar recarga del FutureBuilder

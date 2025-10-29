@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../services/cuidador_service.dart';
 
 class CuidadorReminderDetailScreen extends StatefulWidget {
-  final Reminder reminder;
+  final ReminderNew reminder;
 
   const CuidadorReminderDetailScreen({Key? key, required this.reminder}) : super(key: key);
 
@@ -14,7 +14,7 @@ class CuidadorReminderDetailScreen extends StatefulWidget {
 
 class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScreen> {
   final CuidadorService _cuidadorService = CuidadorService();
-  late Reminder _currentReminder;
+  late ReminderNew _currentReminder;
   bool _isLoading = false;
 
   // Formatters

@@ -1,51 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
-import 'calendar_service.dart';
+import '../reminder_service_new.dart';
 import 'cuidador_service.dart';
 import 'reports_cache.dart';
 
 class AnalyticsService with CacheableMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final CalendarService _calendarService = CalendarService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   final CuidadorService _cuidadorService = CuidadorService();
 
   User? get currentUser => _auth.currentUser;
 
-  /// Determina si un recordatorio está realmente vencido
-  /// Un recordatorio NO está vencido si:
-  /// 1. Está completado
-  /// 2. Su fecha/hora es futura
-  /// 3. Fue creado después de su hora programada el mismo día
-  bool isReallyOverdue(Reminder reminder, DateTime now) {
-    if (reminder.isCompleted) return false;
-    
-    final scheduledDateTime = reminder.dateTime.toLocal();
-    final createdAt = reminder.createdAt?.toLocal();
-    
-    // Si la fecha programada es futura, no está vencido
-    if (scheduledDateTime.isAfter(now)) return false;
-    
-    // Si es el mismo día y se creó después de la hora programada, no está vencido
-    final scheduledDay = DateTime(scheduledDateTime.year, scheduledDateTime.month, scheduledDateTime.day);
-    final today = DateTime(now.year, now.month, now.day);
-    
-    if (scheduledDay.isAtSameMomentAs(today) && createdAt != null) {
-      if (createdAt.isAfter(scheduledDateTime)) {
-        return false; // Creado después de la hora programada
-      }
-    }
-    
-    return scheduledDateTime.isBefore(now);
-  }
+  // Método obsoleto - las estadísticas ahora usan confirmaciones individuales
 
   /// Calcula estadísticas reales para el período especificado
   Future<Map<String, dynamic>> calculateRealStats({
     required DateTime startDate,
     required DateTime endDate,
-    List<Reminder>? allReminders,
+    List<ReminderNew>? allReminders,
     List<UserModel>? allPatients,
   }) async {
     final cacheKey = cache.generateAnalyticsKey(
@@ -55,64 +30,33 @@ class AnalyticsService with CacheableMixin {
     );
 
     return await withCache(cacheKey, () async {
-      final now = DateTime.now();
       final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
       final patients = allPatients ?? await _cuidadorService.getPacientes();
 
-      // Filtrar recordatorios por período
-      final periodReminders = reminders.where((r) {
-        return r.dateTime.isAfter(startDate.subtract(Duration(seconds: 1))) &&
-               r.dateTime.isBefore(endDate.add(Duration(days: 1)));
-      }).toList();
-
-      // Calcular métricas básicas
-      final totalReminders = periodReminders.length;
-      final completedReminders = periodReminders.where((r) => r.isCompleted).length;
-      final overdueReminders = periodReminders.where((r) => isReallyOverdue(r, now)).length;
-      final todayReminders = periodReminders.where((r) {
-        final today = DateTime(now.year, now.month, now.day);
-        final reminderDay = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
-        return reminderDay.isAtSameMomentAs(today);
-      }).length;
-
-      // Calcular adherencia real (solo sobre recordatorios que debieron ocurrir)
-      final dueReminders = periodReminders.where((r) {
-        return r.isCompleted || isReallyOverdue(r, now);
-      }).toList();
+      // Usar el servicio de cuidador que ya calcula estadísticas con el nuevo sistema
+      final stats = await _cuidadorService.getCuidadorStats();
       
-      final adherenceRate = dueReminders.isNotEmpty 
-          ? ((completedReminders / dueReminders.length) * 100).round()
-          : 0;
-
       // Distribución por tipos
-      final medicationCount = periodReminders.where((r) => 
+      final medicationCount = reminders.where((r) => 
         r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
       ).length;
-      final taskCount = periodReminders.where((r) => 
+      final taskCount = reminders.where((r) => 
         r.type.toLowerCase().contains('tarea') || r.type == 'Tarea'
       ).length;
-      final appointmentCount = periodReminders.where((r) => 
+      final appointmentCount = reminders.where((r) => 
         r.type.toLowerCase().contains('cita') || r.type == 'Cita'
       ).length;
 
       return {
         'totalPacientes': patients.length,
-        'totalRecordatorios': totalReminders,
-        'recordatoriosActivos': reminders.where((r) => r.isActive).length,
-        'completadosHoy': periodReminders.where((r) {
-          final today = DateTime(now.year, now.month, now.day);
-          final reminderDay = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
-          return reminderDay.isAtSameMomentAs(today) && r.isCompleted;
-        }).length,
-        'alertasHoy': todayReminders - periodReminders.where((r) {
-          final today = DateTime(now.year, now.month, now.day);
-          final reminderDay = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
-          return reminderDay.isAtSameMomentAs(today) && r.isCompleted;
-        }).length,
-        'adherenciaGeneral': adherenceRate,
-        'recordatoriosHoy': todayReminders,
-        'vencidos': overdueReminders,
-        'completados': completedReminders,
+        'totalRecordatorios': stats['totalRecordatorios'] ?? 0,
+        'recordatoriosActivos': stats['recordatoriosActivos'] ?? 0,
+        'completadosHoy': stats['completadosHoy'] ?? 0,
+        'alertasHoy': stats['alertasHoy'] ?? 0,
+        'adherenciaGeneral': stats['adherenciaGeneral'] ?? 0,
+        'recordatoriosHoy': stats['recordatoriosHoy'] ?? 0,
+        'vencidos': 0,
+        'completados': stats['completadosHoy'] ?? 0,
         'recordatoriosPorTipo': {
           'medicacion': medicationCount,
           'tareas': taskCount,
@@ -123,10 +67,11 @@ class AnalyticsService with CacheableMixin {
   }
 
   /// Genera datos para gráfico de tendencias de adherencia
+  /// TODO: Actualizar para usar confirmaciones del nuevo sistema
   Future<List<Map<String, dynamic>>> getTrendData({
     required DateTime startDate,
     required DateTime endDate,
-    List<Reminder>? allReminders,
+    List<ReminderNew>? allReminders,
   }) async {
     final cacheKey = cache.generateAnalyticsKey(
       operation: 'getTrendData',
@@ -138,31 +83,28 @@ class AnalyticsService with CacheableMixin {
       final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
       final trendData = <Map<String, dynamic>>[];
       
-      // Generar datos por día
+      // Generar datos por día - TEMPORAL: sin verificar completados
       for (var date = startDate; date.isBefore(endDate) || date.isAtSameMomentAs(endDate); 
            date = date.add(Duration(days: 1))) {
         
         final dayStart = DateTime(date.year, date.month, date.day);
-        final dayEnd = DateTime(date.year, date.month, date.day, 23, 59, 59);
+        final dayEnd = dayStart.add(Duration(days: 1));
         
         final dayReminders = reminders.where((r) => 
-          r.dateTime.isAfter(dayStart.subtract(Duration(seconds: 1))) &&
-          r.dateTime.isBefore(dayEnd.add(Duration(seconds: 1)))
+          r.startDate.isBefore(dayEnd) && r.endDate.isAfter(dayStart)
         ).toList();
         
-        final completed = dayReminders.where((r) => r.isCompleted).length;
-        final due = dayReminders.where((r) => 
-          r.isCompleted || isReallyOverdue(r, DateTime.now())
-        ).length;
-        
-        final adherence = due > 0 ? (completed / due * 100).round() : 0;
+        // TODO: Obtener confirmaciones para calcular completados
+        final completed = 0;
+        final total = dayReminders.length;
+        final adherence = 0;
         
         trendData.add({
           'date': date,
           'adherence': adherence,
           'completed': completed,
-          'total': dayReminders.length,
-          'overdue': dayReminders.where((r) => isReallyOverdue(r, DateTime.now())).length,
+          'total': total,
+          'overdue': 0,
         });
       }
       
@@ -171,10 +113,11 @@ class AnalyticsService with CacheableMixin {
   }
 
   /// Calcula estadísticas por paciente
+  /// TODO: Actualizar para usar confirmaciones del nuevo sistema
   Future<List<Map<String, dynamic>>> getPatientStats({
     required DateTime startDate,
     required DateTime endDate,
-    List<Reminder>? allReminders,
+    List<ReminderNew>? allReminders,
     List<UserModel>? allPatients,
   }) async {
     try {
@@ -185,24 +128,17 @@ class AnalyticsService with CacheableMixin {
       final patientStats = <Map<String, dynamic>>[];
       
       for (final patient in patients) {
+        // Usar servicio de cuidador para obtener stats reales
+        final stats = await _cuidadorService.getEstadisticasPaciente(patient.userId!);
         final patientReminders = reminders.where((r) => 
-          r.userId == patient.userId &&
-          r.dateTime.isAfter(startDate.subtract(Duration(seconds: 1))) &&
-          r.dateTime.isBefore(endDate.add(Duration(days: 1)))
+          r.userId == patient.userId
         ).toList();
         
-        final total = patientReminders.length;
-        final completed = patientReminders.where((r) => r.isCompleted).length;
-        final overdue = patientReminders.where((r) => isReallyOverdue(r, now)).length;
-        final pending = patientReminders.where((r) => 
-          !r.isCompleted && !isReallyOverdue(r, now)
-        ).length;
-        
-        final due = patientReminders.where((r) => 
-          r.isCompleted || isReallyOverdue(r, now)
-        ).length;
-        
-        final adherence = due > 0 ? ((completed / due) * 100).round() : 0;
+        final total = stats['totalRecordatorios'] as int;
+        final completed = stats['completados'] as int;
+        final overdue = 0; // TODO
+        final pending = stats['pendientes'] as int;
+        final adherence = stats['adherencia'] as int;
         
         // Distribución por tipos para este paciente
         final medicationCount = patientReminders.where((r) => 
@@ -242,7 +178,7 @@ class AnalyticsService with CacheableMixin {
   }
 
   /// Genera datos para gráfico de distribución por tipos
-  Map<String, dynamic> getTypeDistribution(List<Reminder> reminders) {
+  Map<String, dynamic> getTypeDistribution(List<ReminderNew> reminders) {
     final medication = reminders.where((r) => 
       r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
     ).length;
@@ -264,7 +200,7 @@ class AnalyticsService with CacheableMixin {
 
   /// Obtiene alertas críticas reales
   Future<List<Map<String, dynamic>>> getCriticalAlerts({
-    List<Reminder>? allReminders,
+    List<ReminderNew>? allReminders,
     List<UserModel>? allPatients,
   }) async {
     try {
@@ -275,7 +211,11 @@ class AnalyticsService with CacheableMixin {
       final alerts = <Map<String, dynamic>>[];
       
       for (final reminder in reminders) {
-        if (isReallyOverdue(reminder, now)) {
+        // TODO: Verificar vencimiento con confirmaciones
+        final nextOccurrence = reminder.getNextOccurrence();
+        final isOverdue = nextOccurrence == null || nextOccurrence.isBefore(now);
+        
+        if (isOverdue) {
           final patient = patients.firstWhere(
             (p) => p.userId == reminder.userId,
             orElse: () => UserModel(
@@ -287,7 +227,7 @@ class AnalyticsService with CacheableMixin {
           );
           
           // Calcular cuánto tiempo lleva vencido
-          final overdueDuration = now.difference(reminder.dateTime);
+          final overdueDuration = nextOccurrence != null ? now.difference(nextOccurrence) : Duration.zero;
           
           alerts.add({
             'reminder': reminder,
@@ -310,6 +250,19 @@ class AnalyticsService with CacheableMixin {
       print('Error obteniendo alertas críticas: $e');
       return [];
     }
+  }
+  
+  /// Verifica si un recordatorio está realmente vencido
+  /// TODO: Actualizar para verificar con confirmaciones
+  bool isReallyOverdue(ReminderNew reminder, DateTime now) {
+    // Obtener próxima ocurrencia
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) {
+      // No hay más ocurrencias futuras, verificar si el rango ya terminó
+      return reminder.endDate.isBefore(now);
+    }
+    // No está vencido si tiene próxima ocurrencia futura
+    return false;
   }
 
   int _getAlertSeverity(Duration overdueDuration) {

@@ -1,5 +1,5 @@
 import 'dart:async';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 
 class ReportsCache {
@@ -9,7 +9,7 @@ class ReportsCache {
 
   // Cache para los datos básicos
   List<UserModel>? _cachedPatients;
-  List<Reminder>? _cachedReminders;
+  List<ReminderNew>? _cachedReminders;
   DateTime? _lastCacheUpdate;
   static const Duration _cacheExpiry = Duration(minutes: 5);
 
@@ -30,13 +30,13 @@ class ReportsCache {
   }
 
   /// Obtiene recordatorios del cache o null si no está disponible
-  List<Reminder>? getCachedReminders() {
+  List<ReminderNew>? getCachedReminders() {
     if (!_isCacheValid) return null;
     return _cachedReminders;
   }
 
   /// Actualiza el cache principal con nuevos datos
-  void updateCache(List<UserModel> patients, List<Reminder> reminders) {
+  void updateCache(List<UserModel> patients, List<ReminderNew> reminders) {
     _cachedPatients = List.from(patients);
     _cachedReminders = List.from(reminders);
     _lastCacheUpdate = DateTime.now();

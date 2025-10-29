@@ -3,10 +3,10 @@ import 'package:intl/intl.dart';
 import '../services/invitacion_service.dart';
 import '../models/invitacion_cuidador.dart';
 import '../services/user_service.dart';
-import '../services/reminder_service.dart';
-import '../services/calendar_service.dart';
+import '../reminder_service_new.dart';
 import '../services/cuidador_service.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../models/user.dart';
 import 'invitaciones_cuidador.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,8 +21,7 @@ class NotificacionesScreen extends StatefulWidget {
 class _NotificacionesScreenState extends State<NotificacionesScreen> {
   final InvitacionService _invitacionService = InvitacionService();
   final UserService _userService = UserService();
-  final ReminderService _reminderService = ReminderService();
-  final CalendarService _calendarService = CalendarService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   final CuidadorService _cuidadorService = CuidadorService();
   
   List<InvitacionCuidador> _invitacionesPendientes = [];
@@ -181,18 +180,12 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       final pacientes = await _cuidadorService.getPacientes();
       final reminders = await _cuidadorService.getAllRemindersFromPatients();
 
-      // Agrupar recordatorios relevantes por paciente
-      final Map<String, List<Reminder>> porPaciente = {};
-      for (final r in reminders) {
-        final dOnly = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
-        if (dOnly.isBefore(sevenDaysAgo) || dOnly.isAfter(today)) continue;
-        final pid = r.userId ?? '';
-        porPaciente.putIfAbsent(pid, () => []).add(r);
-      }
-
-      for (final entry in porPaciente.entries) {
-        final pacienteId = entry.key;
+      // Procesar cada recordatorio
+      for (final reminder in reminders) {
+        // Encontrar nombre del paciente
+        final pacienteId = reminder.userId ?? '';
         if (pacienteId.isEmpty) continue;
+        
         UserModel? paciente;
         try {
           paciente = pacientes.firstWhere((p) => p.userId == pacienteId);
@@ -201,70 +194,69 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         }
         final pacienteNombre = paciente?.persona.nombres ?? 'Paciente';
 
-        // Completados HOY para el paciente
-        final completionsHoy = await _calendarService.getCompletionsForUserInRange(pacienteId, today, today);
-        final completedToday = completionsHoy.map((c) => c['reminderId'] as String).toSet();
-
-        for (final r in entry.value) {
-          final dt = r.dateTime.toLocal();
-          final dOnly = DateTime(dt.year, dt.month, dt.day);
-
-          if (dOnly.isBefore(today)) {
-            // Días anteriores: solo marcar omitido si el recordatorio existía antes de su hora
-            final ca = r.createdAt?.toLocal();
-            if (ca != null && ca.isAfter(dt)) {
-              // Se creó después de la hora de ese día: no considerar omitido
-              continue;
-            }
-            final done = await _calendarService.isReminderCompletedForUser(pacienteId, r.id, dOnly);
-            if (!done) {
-              _notifications.add(_AppNotification(
-                type: 'warning',
-                title: '${pacienteNombre} - ${r.title}',
-                message: 'Omitido (${DateFormat('dd/MM').format(dt)})',
-                when: dt,
-              ));
-            }
-            continue;
-          }
-
-          // Hoy
-          if (dt.isAfter(now)) {
-            _notifications.add(_AppNotification(
-              type: r.type == 'medication' ? 'medication' : 'reminder',
-              title: '${pacienteNombre} - ${r.title}',
-              message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
-              when: dt,
-            ));
-          } else if (completedToday.contains(r.id)) {
-            final comp = completionsHoy.firstWhere((c) => c['reminderId'] == r.id);
-            final ts = comp['completedAt'];
-            DateTime when = dt;
-            if (ts is Timestamp) when = ts.toDate();
-            _notifications.add(_AppNotification(
-              type: 'completed',
-              title: '${pacienteNombre} - ${r.title}',
-              message: 'Completado',
-              when: when,
-            ));
-          } else {
-            // Excepción: si se creó después de la hora programada, no marcar omitido
-            final ca = r.createdAt?.toLocal();
-            final createdAfterSchedule = ca != null && ca.isAfter(dt);
-            if (createdAfterSchedule) {
-              _notifications.add(_AppNotification(
-                type: r.type == 'medication' ? 'medication' : 'reminder',
-                title: '${pacienteNombre} - ${r.title}',
-                message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
-                when: ca ?? dt,
-              ));
+        // Obtener confirmaciones del recordatorio
+        final confirmations = await _reminderService.getConfirmations(reminder.id);
+        
+        // Generar notificaciones para los últimos 7 días + hoy
+        for (int dayOffset = -7; dayOffset <= 0; dayOffset++) {
+          final checkDate = today.add(Duration(days: dayOffset));
+          if (!reminder.hasOccurrencesOnDay(checkDate)) continue;
+          
+          final occurrences = reminder.calculateOccurrencesForDay(checkDate);
+          
+          for (final occurrence in occurrences) {
+            // Verificar si hay confirmación para esta ocurrencia
+            final confirmation = confirmations.firstWhere(
+              (c) => 
+                c.scheduledTime.year == occurrence.year &&
+                c.scheduledTime.month == occurrence.month &&
+                c.scheduledTime.day == occurrence.day &&
+                c.scheduledTime.hour == occurrence.hour &&
+                c.scheduledTime.minute == occurrence.minute,
+              orElse: () => ReminderConfirmation(
+                id: '',
+                reminderId: '',
+                userId: '',
+                scheduledTime: occurrence,
+                status: ConfirmationStatus.PENDING,
+                createdAt: occurrence,
+              ),
+            );
+            
+            if (dayOffset == 0) {
+              // Hoy
+              if (occurrence.isAfter(now)) {
+                _notifications.add(_AppNotification(
+                  type: reminder.type == 'medication' ? 'medication' : 'reminder',
+                  title: '${pacienteNombre} - ${reminder.title}',
+                  message: 'Programado para ${DateFormat('HH:mm').format(occurrence)}',
+                  when: occurrence,
+                ));
+              } else if (confirmation.status == ConfirmationStatus.CONFIRMED) {
+                _notifications.add(_AppNotification(
+                  type: 'completed',
+                  title: '${pacienteNombre} - ${reminder.title}',
+                  message: 'Completado',
+                  when: confirmation.confirmedAt ?? occurrence,
+                ));
+              } else if (confirmation.status == ConfirmationStatus.MISSED) {
+                _notifications.add(_AppNotification(
+                  type: 'warning',
+                  title: '${pacienteNombre} - ${reminder.title}',
+                  message: 'Omitido',
+                  when: occurrence,
+                ));
+              }
             } else {
-              _notifications.add(_AppNotification(
-                type: 'warning',
-                title: '${pacienteNombre} - ${r.title}',
-                message: 'Omitido',
-                when: dt,
-              ));
+              // Días anteriores
+              if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
+                _notifications.add(_AppNotification(
+                  type: 'warning',
+                  title: '${pacienteNombre} - ${reminder.title}',
+                  message: 'Omitido (${DateFormat('dd/MM').format(occurrence)})',
+                  when: occurrence,
+                ));
+              }
             }
           }
         }
@@ -273,70 +265,66 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       // Paciente: ver sus eventos (últimos 7 días + hoy)
       final reminders = await _reminderService.getAllReminders();
 
-      // Completados HOY
-      final completionsHoy = await _calendarService.getCompletionsForDate(today);
-      final completedToday = completionsHoy.map((c) => c['reminderId'] as String).toSet();
-
-      for (final r in reminders) {
-        final dt = r.dateTime.toLocal();
-        final dOnly = DateTime(dt.year, dt.month, dt.day);
-        if (dOnly.isBefore(sevenDaysAgo) || dOnly.isAfter(today)) continue;
-
-        if (dOnly.isBefore(today)) {
-          // Días anteriores: solo marcar omitido si existía antes
-          final ca = r.createdAt?.toLocal();
-          if (ca != null && ca.isAfter(dt)) {
-            // Creado después: no marcar omitido
-            continue;
-          }
-          final done = await _calendarService.isReminderCompleted(r.id, dOnly);
-          if (!done) {
-            _notifications.add(_AppNotification(
-              type: 'warning',
-              title: r.title,
-              message: 'Omitido (${DateFormat('dd/MM').format(dt)})',
-              when: dt,
-            ));
-          }
-          continue;
-        }
-
-        if (dt.isAfter(now)) {
-          _notifications.add(_AppNotification(
-            type: r.type == 'medication' ? 'medication' : 'reminder',
-            title: r.title,
-            message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
-            when: dt,
-          ));
-        } else if (completedToday.contains(r.id)) {
-          final comp = completionsHoy.firstWhere((c) => c['reminderId'] == r.id);
-          final ts = comp['completedAt'];
-          DateTime when = dt;
-          if (ts is Timestamp) when = ts.toDate();
-          _notifications.add(_AppNotification(
-            type: 'completed',
-            title: r.title,
-            message: 'Completado',
-            when: when,
-          ));
-        } else {
-          // Excepción: mismo día, creado después de la hora programada
-          final ca = r.createdAt?.toLocal();
-          final createdAfterSchedule = ca != null && ca.isAfter(dt);
-          if (createdAfterSchedule) {
-            _notifications.add(_AppNotification(
-              type: r.type == 'medication' ? 'medication' : 'reminder',
-              title: r.title,
-              message: 'Programado para ${DateFormat('HH:mm').format(dt)}',
-              when: ca ?? dt,
-            ));
-          } else {
-            _notifications.add(_AppNotification(
-              type: 'warning',
-              title: r.title,
-              message: 'Omitido',
-              when: dt,
-            ));
+      for (final reminder in reminders) {
+        final confirmations = await _reminderService.getConfirmations(reminder.id);
+        
+        for (int dayOffset = -7; dayOffset <= 0; dayOffset++) {
+          final checkDate = today.add(Duration(days: dayOffset));
+          if (!reminder.hasOccurrencesOnDay(checkDate)) continue;
+          
+          final occurrences = reminder.calculateOccurrencesForDay(checkDate);
+          
+          for (final occurrence in occurrences) {
+            final confirmation = confirmations.firstWhere(
+              (c) => 
+                c.scheduledTime.year == occurrence.year &&
+                c.scheduledTime.month == occurrence.month &&
+                c.scheduledTime.day == occurrence.day &&
+                c.scheduledTime.hour == occurrence.hour &&
+                c.scheduledTime.minute == occurrence.minute,
+              orElse: () => ReminderConfirmation(
+                id: '',
+                reminderId: '',
+                userId: '',
+                scheduledTime: occurrence,
+                status: ConfirmationStatus.PENDING,
+                createdAt: occurrence,
+              ),
+            );
+            
+            if (dayOffset == 0) {
+              if (occurrence.isAfter(now)) {
+                _notifications.add(_AppNotification(
+                  type: reminder.type == 'medication' ? 'medication' : 'reminder',
+                  title: reminder.title,
+                  message: 'Programado para ${DateFormat('HH:mm').format(occurrence)}',
+                  when: occurrence,
+                ));
+              } else if (confirmation.status == ConfirmationStatus.CONFIRMED) {
+                _notifications.add(_AppNotification(
+                  type: 'completed',
+                  title: reminder.title,
+                  message: 'Completado',
+                  when: confirmation.confirmedAt ?? occurrence,
+                ));
+              } else if (confirmation.status == ConfirmationStatus.MISSED) {
+                _notifications.add(_AppNotification(
+                  type: 'warning',
+                  title: reminder.title,
+                  message: 'Omitido',
+                  when: occurrence,
+                ));
+              }
+            } else {
+              if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
+                _notifications.add(_AppNotification(
+                  type: 'warning',
+                  title: reminder.title,
+                  message: 'Omitido (${DateFormat('dd/MM').format(occurrence)})',
+                  when: occurrence,
+                ));
+              }
+            }
           }
         }
       }

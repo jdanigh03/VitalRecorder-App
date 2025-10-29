@@ -11,8 +11,8 @@ import '../services/bracelet_service.dart';
 import '../services/calendar_service.dart';
 import '../services/notification_service.dart';
 import '../models/bracelet_device.dart';
-import 'agregar_recordatorio.dart';
-import 'detalle_recordatorio.dart';
+import 'agregar_recordatorio_new.dart';
+import 'detalle_recordatorio_new.dart';
 import 'historial.dart';
 import 'calendario.dart';
 import 'asignar_cuidador.dart';
@@ -199,7 +199,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       final success = await _reminderService.confirmReminder(
         reminderId: reminder.id,
         scheduledTime: scheduledTime,
-        confirmedAt: now,
       );
       
       if (success) {
@@ -341,7 +340,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       
       for (final reminderId in _selectedReminderIds) {
         final reminder = _todayReminders.firstWhere((r) => r.id == reminderId);
-        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
+        // Usar startDate en lugar de dateTime
+        final reminderDate = DateTime(reminder.startDate.year, reminder.startDate.month, reminder.startDate.day);
         final completionDate = reminderDate.isBefore(today) ? reminderDate : today;
         
         final success = await _calendarService.markReminderCompleted(reminder.id, completionDate);
@@ -712,7 +712,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const AgregarRecordatorioScreen(),
+              builder: (context) => AgregarRecordatorioNewScreen(),
             ),
           );
           _loadUserData(); // Recargar después de agregar
@@ -886,7 +886,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const AgregarRecordatorioScreen(),
+                    builder: (context) => AgregarRecordatorioNewScreen(),
                   ),
                 );
               },
@@ -1011,7 +1011,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          reminder.notes ?? '',
+                          reminder.description,
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[600],

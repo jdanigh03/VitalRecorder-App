@@ -311,6 +311,11 @@ class ReminderServiceNew {
             .toList());
   }
 
+  /// Obtiene todos los recordatorios activos del usuario (alias de getActiveReminders para compatibilidad)
+  Future<List<ReminderNew>> getAllReminders() async {
+    return await getActiveReminders();
+  }
+
   // ========================================
   // CONFIRMACIONES
   // ========================================
@@ -393,6 +398,11 @@ class ReminderServiceNew {
       print('❌ Error obteniendo confirmaciones: $e');
       return [];
     }
+  }
+
+  /// Alias para compatibilidad - obtiene confirmaciones de un recordatorio
+  Future<List<ReminderConfirmation>> getConfirmations(String reminderId) async {
+    return await getConfirmationsByReminder(reminderId);
   }
 
   /// Obtiene confirmaciones pendientes del usuario para HOY

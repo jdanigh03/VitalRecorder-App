@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Modelo rediseñado de Recordatorio con soporte para:
 /// - Rangos de fechas (inicio/fin)
 /// - Intervalos personalizables
@@ -248,6 +250,11 @@ class ReminderNew {
     return calculateOccurrencesForDay(day).isNotEmpty;
   }
 
+  /// Alias para compatibilidad - verifica si tiene ocurrencias en un día
+  bool hasOccurrencesOnDay(DateTime day) {
+    return hasOccurrencesOn(day);
+  }
+
   /// Obtiene ocurrencias en un rango de fechas
   List<DateTime> getOccurrencesInRange(DateTime start, DateTime end) {
     return calculateAllScheduledTimes()
@@ -325,28 +332,6 @@ extension IntervalTypeExtension on IntervalType {
   }
 }
 
-/// Clase auxiliar para TimeOfDay (Flutter)
-/// Si no está importado de material.dart, definir aquí
-class TimeOfDay {
-  final int hour;
-  final int minute;
-
-  const TimeOfDay({required this.hour, required this.minute});
-
-  @override
-  String toString() {
-    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is TimeOfDay && other.hour == hour && other.minute == minute;
-  }
-
-  @override
-  int get hashCode => hour.hashCode ^ minute.hashCode;
-}
 
 /// Opciones predefinidas de duración
 enum DurationPreset {
