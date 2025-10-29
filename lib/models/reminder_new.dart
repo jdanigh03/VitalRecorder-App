@@ -210,6 +210,93 @@ class ReminderNew {
     return scheduledTimes;
   }
 
+  /// Calcula todas las ocurrencias para un día específico
+  List<DateTime> calculateOccurrencesForDay(DateTime day) {
+    final dayStart = DateTime(day.year, day.month, day.day);
+    final dayEnd = dayStart.add(Duration(days: 1));
+    
+    return calculateAllScheduledTimes()
+        .where((dt) => !dt.isBefore(dayStart) && dt.isBefore(dayEnd))
+        .toList();
+  }
+
+  /// Obtiene la próxima ocurrencia desde ahora
+  DateTime? getNextOccurrence() {
+    final now = DateTime.now();
+    final allTimes = calculateAllScheduledTimes();
+    
+    try {
+      return allTimes.firstWhere((dt) => dt.isAfter(now));
+    } catch (e) {
+      return null; // No hay próximas ocurrencias
+    }
+  }
+
+  /// Obtiene la próxima ocurrencia desde una fecha específica
+  DateTime? getNextOccurrenceFrom(DateTime from) {
+    final allTimes = calculateAllScheduledTimes();
+    
+    try {
+      return allTimes.firstWhere((dt) => dt.isAfter(from));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Verifica si tiene ocurrencias en un día específico
+  bool hasOccurrencesOn(DateTime day) {
+    return calculateOccurrencesForDay(day).isNotEmpty;
+  }
+
+  /// Obtiene ocurrencias en un rango de fechas
+  List<DateTime> getOccurrencesInRange(DateTime start, DateTime end) {
+    return calculateAllScheduledTimes()
+        .where((dt) => !dt.isBefore(start) && !dt.isAfter(end))
+        .toList();
+  }
+
+  /// Obtiene ocurrencias pendientes (futuras) desde ahora
+  List<DateTime> getPendingOccurrences() {
+    final now = DateTime.now();
+    return calculateAllScheduledTimes()
+        .where((dt) => dt.isAfter(now))
+        .toList();
+  }
+
+  /// Obtiene ocurrencias pasadas desde ahora
+  List<DateTime> getPastOccurrences() {
+    final now = DateTime.now();
+    return calculateAllScheduledTimes()
+        .where((dt) => dt.isBefore(now))
+        .toList();
+  }
+
+  /// Calcula el total de ocurrencias en el rango completo
+  int get totalOccurrences {
+    return calculateAllScheduledTimes().length;
+  }
+
+  /// Texto legible del intervalo
+  String get intervalDisplayText {
+    if (intervalType == IntervalType.HOURS) {
+      return 'Cada $intervalValue ${intervalValue == 1 ? 'hora' : 'horas'}';
+    } else {
+      return 'Cada $intervalValue ${intervalValue == 1 ? 'día' : 'días'}';
+    }
+  }
+
+  /// Duración total en días
+  int get durationInDays {
+    return endDate.difference(startDate).inDays + 1;
+  }
+
+  /// Texto legible del rango de fechas
+  String get dateRangeText {
+    final startStr = '${startDate.day}/${startDate.month}/${startDate.year}';
+    final endStr = '${endDate.day}/${endDate.month}/${endDate.year}';
+    return '$startStr - $endStr';
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
