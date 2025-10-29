@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
-import '../models/reminder.dart';
-import '../services/reminder_service.dart';
+import '../models/reminder_new.dart';
+import '../reminder_service_new.dart';
 import '../utils/export_utils.dart';
-import 'detalle_recordatorio.dart';
+import 'detalle_recordatorio_new.dart';
 import 'agregar_recordatorio.dart';
 
 class CalendarioScreen extends StatefulWidget {
@@ -17,14 +17,14 @@ class CalendarioScreen extends StatefulWidget {
 class _CalendarioScreenState extends State<CalendarioScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
   
-  List<Reminder> _allReminders = [];
-  List<Reminder> _filteredReminders = [];
+  List<ReminderNew> _allReminders = [];
+  List<ReminderNew> _filteredReminders = [];
   String? _selectedMedicament;
   bool _isLoading = true;
 
@@ -93,128 +93,35 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     });
   }
 
-  List<Reminder> _getRemindersForDay(DateTime day) {
+  List<ReminderNew> _getRemindersForDay(DateTime day) {
+    // Usar el nuevo método para verificar ocurrencias
     return _filteredReminders.where((reminder) {
-      // Si el día es antes de la fecha de creación del recordatorio, no mostrarlo
-      final reminderDate = DateTime(
-        reminder.dateTime.year,
-        reminder.dateTime.month,
-        reminder.dateTime.day,
-      );
-      final checkDay = DateTime(day.year, day.month, day.day);
-      
-      // No mostrar recordatorios que aún no han sido creados
-      if (checkDay.isBefore(reminderDate)) {
-        return false;
-      }
-      
-      // Verificar según la frecuencia
-      switch (reminder.frequency.toLowerCase()) {
-        case 'diario':
-        case 'daily':
-        case 'cada 8 horas':
-        case 'cada 12 horas':
-        case 'every 8 hours':
-        case 'every 12 hours':
-          // Aparece todos los días desde su fecha de inicio
-          // (Para frecuencias por horas, se muestra en cada día con múltiples instancias)
-          return !checkDay.isBefore(reminderDate);
-        
-        case 'semanal':
-        case 'weekly':
-          // Aparece el mismo día de la semana cada 7 días
-          if (checkDay.isBefore(reminderDate)) return false;
-          final daysDifference = checkDay.difference(reminderDate).inDays;
-          return daysDifference % 7 == 0;
-        
-        case 'mensual':
-        case 'monthly':
-          // Aparece el mismo día del mes cada mes
-          if (checkDay.isBefore(reminderDate)) return false;
-          return checkDay.day == reminderDate.day;
-        
-        case 'personalizado':
-        case 'custom':
-          // Por ahora se comporta como diario
-          // En el futuro se podría implementar lógica personalizada
-          return !checkDay.isBefore(reminderDate);
-        
-        case 'una vez':
-        case 'once':
-        default:
-          // Solo aparece en su fecha exacta
-          return isSameDay(reminder.dateTime, day);
-      }
-    }).toList()..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      return reminder.hasOccurrencesOnDay(day);
+    }).toList()..sort((a, b) => a.startDate.compareTo(b.startDate));
   }
 
-  Color _getReminderStatusColor(Reminder reminder) {
-    if (reminder.isCompleted) return Colors.green;
+  Color _getReminderStatusColor(ReminderNew reminder) {
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Colors.grey; // Finalizado
     
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
-    final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
-    final isToday = rd.isAtSameMomentAs(today);
-    
-    bool isVencido = false;
-    
-    if (isToday) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = dt.isBefore(now) && !createdAfterSchedule;
-    } else if (rd.isBefore(today)) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = !createdAfterSchedule;
-    }
-    
-    return isVencido ? Colors.red : Colors.orange;
+    return nextOccurrence.isBefore(now) ? Colors.red : Colors.orange;
   }
 
-  IconData _getReminderStatusIcon(Reminder reminder) {
-    if (reminder.isCompleted) return Icons.check_circle;
+  IconData _getReminderStatusIcon(ReminderNew reminder) {
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Icons.check_circle; // Finalizado
     
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
-    final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
-    final isToday = rd.isAtSameMomentAs(today);
-    
-    bool isVencido = false;
-    
-    if (isToday) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = dt.isBefore(now) && !createdAfterSchedule;
-    } else if (rd.isBefore(today)) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = !createdAfterSchedule;
-    }
-    
-    return isVencido ? Icons.cancel : Icons.access_time;
+    return nextOccurrence.isBefore(now) ? Icons.cancel : Icons.access_time;
   }
 
-  String _getReminderStatusText(Reminder reminder) {
-    if (reminder.isCompleted) return 'COMPLETADO';
+  String _getReminderStatusText(ReminderNew reminder) {
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return 'FINALIZADO';
     
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
-    final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
-    final isToday = rd.isAtSameMomentAs(today);
-    
-    bool isVencido = false;
-    
-    if (isToday) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = dt.isBefore(now) && !createdAfterSchedule;
-    } else if (rd.isBefore(today)) {
-      final createdAfterSchedule = ca != null && ca.isAfter(dt);
-      isVencido = !createdAfterSchedule;
-    }
-    
-    return isVencido ? 'OMITIDO' : 'PENDIENTE';
+    return nextOccurrence.isBefore(now) ? 'VENCIDO' : 'PENDIENTE';
   }
 
   IconData _getTypeIcon(String type) {

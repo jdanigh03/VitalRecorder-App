@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/reminder.dart';
-import '../services/reminder_service.dart';
-import 'detalle_recordatorio.dart';
+import '../models/reminder_new.dart';
+import '../reminder_service_new.dart';
+import 'detalle_recordatorio_new.dart';
 import 'agregar_recordatorio.dart';
 import 'welcome.dart'; 
 import 'asignar_cuidador.dart';
@@ -19,30 +19,27 @@ class _HistorialScreenState extends State<HistorialScreen> {
   int _selectedIndex = 2; // Historial es el índice 2
   String _filterType = 'Todos';
   DateTime? _selectedDate;
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
 
-  List<Reminder> _filterReminders(List<Reminder> allReminders) {
-    List<Reminder> filtered = List.from(allReminders);
+  List<ReminderNew> _filterReminders(List<ReminderNew> allReminders) {
+    List<ReminderNew> filtered = List.from(allReminders);
 
     if (_filterType == 'Medicamentos') {
-      filtered = filtered.where((r) => r.type == 'Medicación').toList();
+      filtered = filtered.where((r) => r.type == 'medication').toList();
     } else if (_filterType == 'Actividades') {
-      filtered = filtered.where((r) => r.type == 'Tarea' || r.type == 'Cita').toList();
-    } else if (_filterType == 'Completados') {
-      filtered = filtered.where((r) => r.isCompleted).toList();
-    } else if (_filterType == 'Pendientes') {
-      filtered = filtered.where((r) => !r.isCompleted).toList();
+      filtered = filtered.where((r) => r.type == 'activity').toList();
     }
+    // Nota: Los filtros de 'Completados' y 'Pendientes' ahora se manejan
+    // a nivel de confirmaciones, no a nivel de recordatorio
 
     if (_selectedDate != null) {
       filtered = filtered.where((r) {
-        return r.dateTime.year == _selectedDate!.year &&
-            r.dateTime.month == _selectedDate!.month &&
-            r.dateTime.day == _selectedDate!.day;
+        return r.hasOccurrencesOnDay(_selectedDate!);
       }).toList();
     }
 
-    filtered.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+    // Ordenar por fecha de inicio (más recientes primero)
+    filtered.sort((a, b) => b.startDate.compareTo(a.startDate));
     return filtered;
   }
 
@@ -118,24 +115,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
                         });
                       },
                     ),
-                    FilterChip(
-                      label: const Text('Completados'),
-                      selected: _filterType == 'Completados',
-                      onSelected: (bool selected) {
-                        setState(() {
-                          _filterType = 'Completados';
-                        });
-                      },
-                    ),
-                    FilterChip(
-                      label: const Text('Pendientes'),
-                      selected: _filterType == 'Pendientes',
-                      onSelected: (bool selected) {
-                        setState(() {
-                          _filterType = 'Pendientes';
-                        });
-                      },
-                    ),
+                    // Nota: Filtros de completados/pendientes removidos
+                    // ya que ahora se manejan a nivel de confirmaciones
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -188,7 +169,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
           const Divider(height: 1),
           // Lista de recordatorios
           Expanded(
-            child: FutureBuilder<List<Reminder>>(
+            child: FutureBuilder<List<ReminderNew>>(
               future: _reminderService.getAllReminders(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -218,6 +199,9 @@ class _HistorialScreenState extends State<HistorialScreen> {
                   itemCount: filteredReminders.length,
                   itemBuilder: (context, index) {
                     final reminder = filteredReminders[index];
+                    final nextOccurrence = reminder.getNextOccurrence();
+                    final isActive = nextOccurrence != null;
+                    
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       elevation: 2,
@@ -230,23 +214,19 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           vertical: 8,
                         ),
                         leading: Icon(
-                          reminder.type == 'Medicación'
+                          reminder.type == 'medication'
                               ? Icons.medication
-                              : reminder.type == 'Cita'
-                                  ? Icons.calendar_today
-                                  : Icons.task,
-                          color: reminder.isCompleted
-                              ? Colors.green
-                              : const Color(0xFF4A90E2),
+                              : Icons.directions_run,
+                          color: isActive
+                              ? const Color(0xFF4A90E2)
+                              : Colors.grey,
                           size: 32,
                         ),
                         title: Text(
                           reminder.title,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            decoration: reminder.isCompleted
-                                ? TextDecoration.lineThrough
-                                : null,
+                            color: isActive ? Colors.black : Colors.grey,
                           ),
                         ),
                         subtitle: Column(
@@ -254,12 +234,11 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           children: [
                             const SizedBox(height: 4),
                             Text(
-                              '${reminder.dateTime.day}/${reminder.dateTime.month}/${reminder.dateTime.year} - '
-                              '${reminder.dateTime.hour.toString().padLeft(2, '0')}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                              reminder.dateRangeText,
                               style: const TextStyle(color: Colors.grey),
                             ),
                             Text(
-                              reminder.type,
+                              reminder.intervalDisplayText,
                               style: const TextStyle(
                                 color: Color(0xFF4A90E2),
                                 fontSize: 12,
@@ -268,18 +247,14 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           ],
                         ),
                         trailing: Icon(
-                          reminder.isCompleted
-                              ? Icons.check_circle
-                              : Icons.pending,
-                          color: reminder.isCompleted
-                              ? Colors.green
-                              : Colors.orange,
+                          isActive ? Icons.schedule : Icons.check_circle,
+                          color: isActive ? Colors.orange : Colors.grey,
                         ),
                         onTap: () async {
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => DetalleRecordatorioScreen(
+                              builder: (context) => DetalleRecordatorioNewScreen(
                                 reminder: reminder,
                               ),
                             ),

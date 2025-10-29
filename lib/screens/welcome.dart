@@ -3,10 +3,10 @@
 // ========================================
 import 'package:flutter/material.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
-import '../services/reminder_service.dart';
+import '../reminder_service_new.dart';
 import '../services/bracelet_service.dart';
 import '../services/calendar_service.dart';
 import '../services/notification_service.dart';
@@ -38,14 +38,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   
   // Servicios de Firebase
   final UserService _userService = UserService();
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   final BraceletService _braceletService = BraceletService();
   final CalendarService _calendarService = CalendarService();
   final NotificationService _notificationService = NotificationService();
   
   // Datos del usuario
   UserModel? _currentUserData;
-  List<Reminder> _todayReminders = [];
+  List<ReminderNew> _todayReminders = [];
 
   @override
   void initState() {
@@ -126,93 +126,32 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
 
   Future<void> _loadTodayReminders() async {
     try {
-      // Debug: Verificar todos los recordatorios en Firestore
-      await _reminderService.debugReminders();
-      
-      // Debug: Verificar completaciones
-      await _calendarService.debugCompletions();
-      
-      // Migrar recordatorios antiguos sin campo isActive
-      final migratedCount = await _reminderService.migrateOldReminders();
-      if (migratedCount > 0) {
-        print('Se migraron $migratedCount recordatorios. Recargando datos...');
-      }
-      
+      print('=== CARGANDO RECORDATORIOS (NUEVO SISTEMA) ===');
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       
-      // Usar getAllReminders - obtiene todos los recordatorios activos
+      // Obtener todos los recordatorios activos
       final allReminders = await _reminderService.getAllReminders();
-      print('Recordatorios obtenidos: ${allReminders.length}');
+      print('Recordatorios activos encontrados: ${allReminders.length}');
       
-      // Obtener completaciones de hoy
-      final todayCompletions = await _calendarService.getCompletedReminderIds(today);
-      print('Completaciones de hoy: ${todayCompletions.length}');
+      List<ReminderNew> relevantReminders = [];
       
-      // Filtrar recordatorios relevantes con nueva lógica
-      final filteredReminders = <Reminder>[];
-      
+      // Para cada recordatorio, obtener ocurrencias de hoy y pendientes
       for (final reminder in allReminders) {
-        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
-        
-        // Recordatorios de hoy - aplicar filtros de relevancia
-        if (reminderDate.isAtSameMomentAs(today)) {
-          final isCompletedToday = todayCompletions.contains(reminder.id);
-          
-          if (!isCompletedToday) {
-            // Para recordatorios no completados de hoy, mostrar TODOS
-            // La lógica de notificaciones se maneja por separado
-            final minutesUntil = reminder.dateTime.difference(now).inMinutes;
-            print('Recordatorio de hoy: ${reminder.title} (${minutesUntil}min)');
-            filteredReminders.add(reminder);
-          } else {
-            print('Recordatorio de hoy completado: ${reminder.title}');
-            // Los completados no se muestran en esta vista
-          }
-          continue;
-        }
-        
-        // Recordatorios de días anteriores - mostrar los no completados
-        if (reminderDate.isBefore(today)) {
-          final isCompletedOnDate = await _calendarService.isReminderCompleted(reminder.id, reminderDate);
-          if (!isCompletedOnDate) {
-            // Mostrar TODOS los recordatorios pendientes de días anteriores
-            // La lógica de notificaciones se maneja por separado
-            print('Recordatorio pendiente de día anterior: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
-            filteredReminders.add(reminder);
-          } else {
-            print('Recordatorio de día anterior ya completado: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
-          }
-          continue;
-        }
-        
-        // Recordatorios futuros - incluir solo los de mañana
-        final tomorrow = DateTime(now.year, now.month, now.day + 1);
-        if (reminderDate.isAtSameMomentAs(tomorrow)) {
-          print('Recordatorio de mañana: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
-          filteredReminders.add(reminder);
-        } else {
-          print('Recordatorio futuro excluido: ${reminder.title} (${reminder.dateTime.day}/${reminder.dateTime.month})');
+        // Verificar si tiene ocurrencias hoy
+        if (reminder.hasOccurrencesOnDay(today)) {
+          relevantReminders.add(reminder);
+          print('✅ ${reminder.title} - Activo hoy');
         }
       }
       
-      _todayReminders = filteredReminders;
-      
-      // Ordenar por fecha y hora
-      _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      _todayReminders = relevantReminders;
       
       print('=== RECORDATORIOS CARGADOS ===');
       print('Total recordatorios relevantes: ${_todayReminders.length}');
       for (final reminder in _todayReminders) {
-        final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
-        final isFromPastDay = reminderDate.isBefore(today);
-        final status = isFromPastDay ? '(PENDIENTE)' : '';
-        print('- ${reminder.title} $status - ${reminder.dateTime.day}/${reminder.dateTime.month} ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
+        print('- ${reminder.title} - ${reminder.intervalDisplayText}');
       }
-      
-      // Verificar y enviar notificaciones para recordatorios pendientes
-      await _notificationService.checkAndSendReminderNotifications(_todayReminders);
-      print('=== NOTIFICACIONES VERIFICADAS ===');
     } catch (e) {
       print('Error cargando recordatorios: $e');
       _todayReminders = [];
@@ -252,19 +191,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     }
   }
 
-  void _marcarComoCompletado(Reminder reminder) async {
+  void _marcarComoCompletado(ReminderNew reminder, DateTime scheduledTime) async {
     try {
       final now = DateTime.now();
-      final reminderDate = DateTime(reminder.dateTime.year, reminder.dateTime.month, reminder.dateTime.day);
-      final today = DateTime(now.year, now.month, now.day);
       
-      // Determinar para qué fecha marcar como completado
-      // Si es un recordatorio de día anterior, marcarlo para su fecha original
-      // Si es de hoy, marcarlo para hoy
-      final completionDate = reminderDate.isBefore(today) ? reminderDate : today;
-      
-      // Marcar como completado en el calendario para la fecha específica
-      final success = await _calendarService.markReminderCompleted(reminder.id, completionDate);
+      // Confirmar ocurrencia específica
+      final success = await _reminderService.confirmReminder(
+        reminderId: reminder.id,
+        scheduledTime: scheduledTime,
+        confirmedAt: now,
+      );
       
       if (success) {
         // Recargar la lista de recordatorios para reflejar cambios
@@ -274,7 +210,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
         // Enviar notificación a la manilla si está conectada
         _sendBraceletNotification(reminder);
       } else {
-        throw Exception('No se pudo marcar como completado en el calendario');
+        throw Exception('No se pudo marcar como completado');
       }
     } catch (e) {
       print('Error marcando recordatorio como completado: $e');
@@ -321,7 +257,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     );
   }
 
-  Future<void> _sendBraceletNotification(Reminder reminder) async {
+  Future<void> _sendBraceletNotification(ReminderNew reminder) async {
     try {
       // Solo enviar si hay una manilla conectada
       if (!_braceletService.isConnected) {
@@ -971,59 +907,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
+  Widget _buildReminderCard(ReminderNew reminder) {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dt = reminder.dateTime.toLocal();
-    final ca = reminder.createdAt?.toLocal();
-    final rd = DateTime(dt.year, dt.month, dt.day);
-    final isToday = rd.isAtSameMomentAs(today);
-    
-    // Lógica corregida: consistente con la lógica de clasificación arreglada
-    bool isVencido = false;
-    bool isPendiente = false;
-    
-    if (!reminder.isCompleted) {
-      if (isToday) {
-        // Para hoy: vencido si la hora ya pasó, excepto si se creó después de la hora programada
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = dt.isBefore(now) && !createdAfterSchedule;
-        isPendiente = dt.isAfter(now) || createdAfterSchedule;
-      } else if (rd.isBefore(today)) {
-        // Para fechas pasadas: vencido solo si NO fue creado después de la hora programada
-        final createdAfterSchedule = ca != null && ca.isAfter(dt);
-        isVencido = !createdAfterSchedule;
-        isPendiente = createdAfterSchedule;
-      } else {
-        // Fecha futura
-        isPendiente = true;
-        isVencido = false;
-      }
-    }
-    
-    // Para mantener compatibilidad con el código existente
-    final isPast = isVencido;
+    final nextOccurrence = reminder.getNextOccurrence();
     final isSelected = _selectedReminderIds.contains(reminder.id);
+    
+    // Mostrar próxima ocurrencia o última si no hay próxima
+    final displayTime = nextOccurrence ?? DateTime.now();
+    final isPast = nextOccurrence == null || nextOccurrence.isBefore(now);
     
     return GestureDetector(
       onTap: () async {
         if (_isMultiSelectMode) {
-          // En modo selección, alternar selección
           _toggleSelection(reminder.id);
         } else {
-          // Navegación normal
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
-            ),
-          );
-          _loadUserData(); // Recargar después de ver detalles
+          // Navegar a confirmaciones del paciente
+          Navigator.pushNamed(context, '/paciente_confirmaciones');
         }
       },
       onLongPress: () {
         if (!_isMultiSelectMode) {
-          // Iniciar modo selección múltiple
           _startMultiSelect(reminder.id);
         }
       },
@@ -1035,14 +938,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
           border: Border.all(
             color: isSelected
                 ? Colors.blue
-                : reminder.isCompleted
-                    ? Colors.green.withOpacity(0.3)
-                    : isVencido 
-                        ? Colors.red.withOpacity(0.3)
-                        : isPendiente
-                            ? Colors.orange.withOpacity(0.3)
-                            : Colors.transparent,
-            width: isSelected || reminder.isCompleted || isVencido || isPendiente ? 2 : 0,
+                : isPast
+                    ? Colors.red.withOpacity(0.3)
+                    : Colors.orange.withOpacity(0.3),
+            width: 2,
           ),
           boxShadow: [
             BoxShadow(
@@ -1058,7 +957,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Checkbox para selección múltiple
                   if (_isMultiSelectMode) ...[
                     Checkbox(
                       value: isSelected,
@@ -1068,7 +966,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     ),
                     const SizedBox(width: 8),
                   ],
-                  // Icono del tipo
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -1099,8 +996,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     ),
                   ),
                   const SizedBox(width: 16),
-
-                  // Información del recordatorio
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1111,23 +1006,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          reminder.description,
+                          reminder.notes ?? '',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                         const SizedBox(height: 8),
                         Wrap(
@@ -1140,23 +1030,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Icon(
                                   Icons.access_time, 
                                   size: 14, 
-                                  color: isVencido 
-                                      ? Colors.red 
-                                      : isPendiente 
-                                          ? Colors.orange 
-                                          : Colors.grey[500],
+                                  color: isPast ? Colors.red : Colors.orange,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  '${displayTime.hour}:${displayTime.minute.toString().padLeft(2, '0')}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: isVencido 
-                                        ? Colors.red 
-                                        : isPendiente 
-                                            ? Colors.orange 
-                                            : Color(0xFF4A90E2),
+                                    color: isPast ? Colors.red : Colors.orange,
                                   ),
                                 ),
                               ],
@@ -1167,7 +1049,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  reminder.frequency,
+                                  reminder.intervalDisplayText,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -1180,96 +1062,36 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                       ],
                     ),
                   ),
-
-                  // Botón de acción (oculto en modo selección múltiple)
                   if (!_isMultiSelectMode) ...[
                     const SizedBox(width: 8),
-                    if (!reminder.isCompleted)
-                      ElevatedButton(
-                        onPressed: () => _marcarComoCompletado(reminder),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          elevation: 2,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.check, size: 18),
-                            SizedBox(width: 4),
-                            Text(
-                              'Confirmar',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      Container(
-                        padding: EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
-                          size: 32,
-                        ),
-                      ),
+                    Icon(
+                      isPast ? Icons.error : Icons.schedule,
+                      color: isPast ? Colors.red : Colors.orange,
+                      size: 32,
+                    ),
                   ],
                 ],
               ),
             ),
-            
-            // Indicador de estado
-            if (isVencido)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Omitido',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isPast ? Colors.red : Colors.orange,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              )
-            else if (isPendiente)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Pendiente',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
+                child: Text(
+                  isPast ? 'Vencido' : 'Pendiente',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
+            ),
           ],
         ),
       ),

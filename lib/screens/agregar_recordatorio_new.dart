@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/reminder_new.dart';
 import '../reminder_schedule_calculator.dart';
 import '../widgets/reminder_creation_widgets.dart';
+import '../reminder_service_new.dart';
 
 class AgregarRecordatorioNewScreen extends StatefulWidget {
   final ReminderNew? reminder; // Para editar
@@ -167,8 +168,21 @@ class _AgregarRecordatorioNewScreenState
         createdAt: widget.reminder?.createdAt ?? DateTime.now(),
       );
 
-      // TODO: Aquí llamarías al service para guardar
-      // await reminderServiceNew.createReminderWithConfirmations(reminder);
+      // Guardar en Firestore con confirmaciones
+      final reminderService = ReminderServiceNew();
+      bool success;
+      
+      if (widget.reminder == null) {
+        // Crear nuevo
+        success = await reminderService.createReminderWithConfirmations(reminder);
+      } else {
+        // Actualizar existente
+        success = await reminderService.updateReminder(reminder);
+      }
+      
+      if (!success) {
+        throw Exception('No se pudo guardar el recordatorio');
+      }
 
       // Cerrar loading
       Navigator.pop(context);

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/cuidador_service.dart';
 import '../services/invitacion_service.dart';
-import '../services/reminder_service.dart';
+import '../reminder_service_new.dart';
 import 'cuidador_pacientes_screen.dart';
 import 'cuidador_recordatorios_screen.dart';
 import 'cuidador_reportes_screen.dart';
@@ -33,11 +33,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   final CuidadorService _cuidadorService = CuidadorService();
   final UserService _userService = UserService();
   final InvitacionService _invitacionService = InvitacionService();
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   
   // Datos
   UserModel? _currentUserData;
-  List<Reminder> _todayReminders = [];
+  List<ReminderNew> _todayReminders = [];
   int _invitacionesPendientes = 0;
 
   @override
@@ -143,47 +143,58 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
   Future<void> _loadRelevantRemindersFromPatients() async {
     try {
-      print('=== CARGANDO RECORDATORIOS ===');
+      print('=== CARGANDO RECORDATORIOS (NUEVO SISTEMA) ===');
+      
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
       
       // Verificar si el usuario actual tiene pacientes asignados
       final pacientesAsignados = await _cuidadorService.getPacientes();
       
-      List<Reminder> relevantReminders = [];
+      List<ReminderNew> relevantReminders = [];
       
       if (pacientesAsignados.isNotEmpty) {
-        // Si es cuidador: obtener recordatorios de pacientes asignados
+        // Si es cuidador: obtener recordatorios de todos los pacientes
         print('Usuario es CUIDADOR - Cargando recordatorios de ${pacientesAsignados.length} pacientes');
-        relevantReminders = await _cuidadorService.getTodayRemindersFromAllPatients();
+        
+        for (final paciente in pacientesAsignados) {
+          final reminders = await _reminderService.getRemindersByPatient(paciente.userId);
+          
+          // Filtrar solo recordatorios con ocurrencias hoy
+          for (final reminder in reminders) {
+            if (reminder.hasOccurrencesOnDay(today)) {
+              relevantReminders.add(reminder);
+            }
+          }
+        }
       } else {
         // Si es paciente: obtener sus propios recordatorios
         print('Usuario es PACIENTE - Cargando recordatorios propios');
         final allReminders = await _reminderService.getAllReminders();
         
-        // Filtrar recordatorios relevantes (hoy + pendientes de días anteriores)
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        
+        // Filtrar recordatorios con ocurrencias hoy
         relevantReminders = allReminders.where((r) {
-          final reminderDate = DateTime(r.dateTime.year, r.dateTime.month, r.dateTime.day);
-          final isToday = reminderDate.isAtSameMomentAs(today);
-          final isPastButActive = reminderDate.isBefore(today) && r.isActive && !r.isCompleted;
-          return isToday || isPastButActive;
+          return r.hasOccurrencesOnDay(today);
         }).toList();
         
         print('=== DEBUG FILTRO PACIENTE ===');
         print('Total recordatorios en BD: ${allReminders.length}');
         print('Recordatorios relevantes filtrados: ${relevantReminders.length}');
         for (final reminder in relevantReminders) {
-          final dateStr = '${reminder.dateTime.day}/${reminder.dateTime.month}';
-          print('✅ ${reminder.title} [$dateStr] - Activo: ${reminder.isActive} - Completado: ${reminder.isCompleted}');
+          print('✅ ${reminder.title} - ${reminder.intervalDisplayText}');
         }
       }
       
-      // Ordenar por hora
-      relevantReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      // Ordenar por próxima ocurrencia
+      relevantReminders.sort((a, b) {
+        final nextA = a.getNextOccurrence();
+        final nextB = b.getNextOccurrence();
+        if (nextA == null) return 1;
+        if (nextB == null) return -1;
+        return nextA.compareTo(nextB);
+      });
       
-      // Eliminar duplicados
-      _todayReminders = relevantReminders.toSet().toList();
+      _todayReminders = relevantReminders;
       
       print('=== RESULTADO FINAL ===');
       print('Total recordatorios mostrados: ${_todayReminders.length}');
@@ -284,7 +295,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     }
   }
 
-  void _marcarComoCompletado(Reminder reminder) async {
+  void _marcarComoCompletado(ReminderNew reminder) async {
     try {
       // No podemos marcar recordatorios de pacientes como completados
       // Esto debe ser hecho por el paciente directamente
@@ -849,7 +860,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
+  Widget _buildReminderCard(ReminderNew reminder) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dt = reminder.dateTime.toLocal();
