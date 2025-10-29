@@ -921,8 +921,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
         if (_isMultiSelectMode) {
           _toggleSelection(reminder.id);
         } else {
-          // Navegar a confirmaciones del paciente
-          Navigator.pushNamed(context, '/paciente_confirmaciones');
+          // Navegar a detalles del recordatorio
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
+            ),
+          );
+          // Recargar recordatorios al regresar
+          _loadTodayReminders();
         }
       },
       onLongPress: () {
