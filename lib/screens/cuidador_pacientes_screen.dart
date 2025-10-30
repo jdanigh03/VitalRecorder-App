@@ -33,6 +33,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLimit();
     _loadPatients();
     _loadInvitations();
   }
@@ -162,6 +163,19 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         ],
       ),
       body: _isLoading ? _buildLoadingView() : _buildPatientsContent(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showInvitePatientDialog,
+        backgroundColor: const Color(0xFF4A90E2),
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text(
+          'Añadir Paciente',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 4,
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           boxShadow: [
@@ -966,5 +980,225 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         ),
       ),
     );
+  }
+
+  void _showInvitePatientDialog() {
+    final emailController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.person_add, color: Color(0xFF4A90E2)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Invitar Paciente',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ingresa el email del paciente que deseas agregar:',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[700],
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                hintText: 'paciente@ejemplo.com',
+                prefixIcon: Icon(Icons.email, color: Color(0xFF4A90E2)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Color(0xFF4A90E2), width: 2),
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'El paciente recibirá una invitación para aceptarte como cuidador',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Por favor ingresa un email'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              
+              if (!_isValidEmail(email)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Por favor ingresa un email válido'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              
+              // Verificar límite de pacientes
+              final currentCount = _pacientes.length;
+              final maxAllowed = _defaultLimit + _additionalSlots;
+              
+              if (currentCount >= maxAllowed) {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Row(
+                      children: [
+                        Icon(Icons.lock, color: Colors.orange),
+                        SizedBox(width: 12),
+                        Expanded(child: Text('Límite alcanzado')),
+                      ],
+                    ),
+                    content: Text(
+                      'Has alcanzado el límite de $maxAllowed pacientes. Desbloquea más cupos para continuar.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
+                          );
+                          await _loadLimit();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        child: Text('Desbloquear cupos'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.pop(context);
+              
+              // Mostrar loading
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => Center(
+                  child: Container(
+                    padding: EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                        SizedBox(height: 16),
+                        Text('Enviando invitación...'),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+              
+              try {
+                // Enviar invitación
+                await _invitacionService.enviarInvitacionDesdeCuidador(email);
+                
+                Navigator.pop(context); // Cerrar loading
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.white),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text('✅ Invitación enviada a $email'),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              } catch (e) {
+                Navigator.pop(context); // Cerrar loading
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error: $e'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Enviar Invitación'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
 }

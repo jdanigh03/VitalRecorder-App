@@ -232,7 +232,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                   child: FadeTransition(
                     opacity: _textOpacity,
                     child: const Text(
-                      'Hecho Por VisualSystems',
+                      'Hecho Por VitalSystems',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white60,

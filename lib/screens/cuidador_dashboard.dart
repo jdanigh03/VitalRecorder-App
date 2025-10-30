@@ -1058,25 +1058,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     ),
                   ),
 
-                  // Botón de acción o estado - adaptado para cuidador
+                  // Botón de confirmación
                   const SizedBox(width: 8),
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: isVencido 
-                          ? Colors.red.withOpacity(0.1)
-                          : Colors.orange.withOpacity(0.1),
-                      shape: BoxShape.circle,
+                  ElevatedButton(
+                    onPressed: () => _confirmarRecordatorio(reminder, displayTime),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: Icon(
-                      isVencido 
-                          ? Icons.error
-                          : Icons.schedule,
-                      color: isVencido 
-                          ? Colors.red
-                          : Colors.orange,
-                      size: 32,
-                    ),
+                    child: Icon(Icons.check, size: 20),
                   ),
                 ],
               ),
@@ -1164,6 +1158,140 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
 
 
+
+  void _confirmarRecordatorio(ReminderNew reminder, DateTime scheduledTime) async {
+    final now = DateTime.now();
+    final difference = now.difference(scheduledTime);
+    final minutesLate = difference.inMinutes;
+    
+    String mensaje;
+    if (minutesLate < 0) {
+      // Aún no es la hora
+      final minutesEarly = minutesLate.abs();
+      mensaje = 'Faltan $minutesEarly minutos para la hora programada.';
+    } else if (minutesLate == 0) {
+      mensaje = '¡Perfecto! Estás a tiempo.';
+    } else if (minutesLate < 60) {
+      mensaje = 'Llevas $minutesLate minutos de retraso.';
+    } else {
+      final hours = minutesLate ~/ 60;
+      final minutes = minutesLate % 60;
+      if (minutes == 0) {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} de retraso.';
+      } else {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} y $minutes minutos de retraso.';
+      }
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              minutesLate <= 0 ? Icons.check_circle : Icons.access_time,
+              color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Confirmar Recordatorio'),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              reminder.title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red)).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Hora programada: ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    mensaje,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: minutesLate <= 5 ? Colors.green[700] : (minutesLate <= 15 ? Colors.orange[700] : Colors.red[700]),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '¿Deseas confirmar este recordatorio?',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              final success = await _reminderService.confirmReminder(
+                reminderId: reminder.id,
+                scheduledTime: scheduledTime,
+              );
+              
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Recordatorio confirmado'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                _loadUserData();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error al confirmar'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showReminderDetails(ReminderNew reminder) async {
     final now = DateTime.now();

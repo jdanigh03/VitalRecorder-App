@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
 import '../reminder_service_new.dart';
@@ -1071,10 +1072,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                   ),
                   if (!_isMultiSelectMode) ...[
                     const SizedBox(width: 8),
-                    Icon(
-                      isPast ? Icons.error : Icons.schedule,
-                      color: isPast ? Colors.red : Colors.orange,
-                      size: 32,
+                    ElevatedButton(
+                      onPressed: () => _confirmarRecordatorio(reminder, displayTime),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Icon(Icons.check, size: 20),
                     ),
                   ],
                 ],
@@ -1202,5 +1210,298 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     final year = date.year;
     
     return '$dayName, $day de $month de $year';
+  }
+
+  void _confirmarRecordatorio(ReminderNew reminder, DateTime scheduledTime) async {
+    final now = DateTime.now();
+    final difference = now.difference(scheduledTime);
+    final minutesLate = difference.inMinutes;
+    
+    String mensaje;
+    if (minutesLate < 0) {
+      // Aún no es la hora
+      final minutesEarly = minutesLate.abs();
+      mensaje = 'Faltan $minutesEarly minutos para la hora programada.';
+    } else if (minutesLate == 0) {
+      mensaje = '¡Perfecto! Estás a tiempo.';
+    } else if (minutesLate < 60) {
+      mensaje = 'Llevas $minutesLate minutos de retraso.';
+    } else {
+      final hours = minutesLate ~/ 60;
+      final minutes = minutesLate % 60;
+      if (minutes == 0) {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} de retraso.';
+      } else {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} y $minutes minutos de retraso.';
+      }
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              minutesLate <= 0 ? Icons.check_circle : Icons.access_time,
+              color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Confirmar Recordatorio'),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              reminder.title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red)).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Hora programada: ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    mensaje,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: minutesLate <= 5 ? Colors.green[700] : (minutesLate <= 15 ? Colors.orange[700] : Colors.red[700]),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '¿Deseas confirmar este recordatorio?',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              final success = await _reminderService.confirmReminder(
+                reminderId: reminder.id,
+                scheduledTime: scheduledTime,
+              );
+              
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Recordatorio confirmado'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                _loadUserData();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error al confirmar'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReminderDetails(ReminderNew reminder) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    
+    // Obtener confirmaciones existentes
+    final confirmations = await _reminderService.getConfirmations(reminder.id);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(reminder.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Descripción: ${reminder.description}'),
+                SizedBox(height: 8),
+                Text('Tipo: ${reminder.type}'),
+                SizedBox(height: 8),
+                Text('Rango: ${reminder.dateRangeText}'),
+                SizedBox(height: 8),
+                Text('Intervalo: ${reminder.intervalDisplayText}'),
+                SizedBox(height: 16),
+                Divider(),
+                SizedBox(height: 8),
+                Text(
+                  'Horarios de hoy:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                ...todayOccurrences.map((occurrence) {
+                  // Buscar si ya está confirmada esta ocurrencia
+                  final confirmation = confirmations.cast<ReminderConfirmation?>().firstWhere(
+                    (c) => 
+                      c!.scheduledTime.year == occurrence.year &&
+                      c.scheduledTime.month == occurrence.month &&
+                      c.scheduledTime.day == occurrence.day &&
+                      c.scheduledTime.hour == occurrence.hour &&
+                      c.scheduledTime.minute == occurrence.minute,
+                    orElse: () => null,
+                  );
+                  
+                  final isConfirmed = confirmation != null && 
+                      confirmation.status.toString() == 'ConfirmationStatus.CONFIRMED';
+                  
+                  final timeStr = '${occurrence.hour}:${occurrence.minute.toString().padLeft(2, '0')}';
+                  final isPast = occurrence.isBefore(now);
+                  
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isConfirmed 
+                          ? Colors.green.withOpacity(0.1)
+                          : isPast
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isConfirmed 
+                            ? Colors.green
+                            : isPast
+                                ? Colors.red
+                                : Colors.orange,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isConfirmed 
+                              ? Icons.check_circle
+                              : isPast
+                                  ? Icons.error
+                                  : Icons.schedule,
+                          color: isConfirmed 
+                              ? Colors.green
+                              : isPast
+                                  ? Colors.red
+                                  : Colors.orange,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (isConfirmed && confirmation != null && confirmation.confirmedAt != null)
+                                Text(
+                                  'Confirmado a las ${confirmation.confirmedAt!.hour}:${confirmation.confirmedAt!.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (!isConfirmed)
+                          ElevatedButton(
+                            onPressed: () async {
+                              final success = await _reminderService.confirmReminder(
+                                reminderId: reminder.id,
+                                scheduledTime: occurrence,
+                              );
+                              
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Recordatorio confirmado'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                // Cerrar diálogo y recargar
+                                Navigator.pop(context);
+                                _loadUserData();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Error al confirmar'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            child: Text('Confirmar'),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
