@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/cuidador_service.dart';
@@ -1164,30 +1165,161 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
 
 
-  void _showReminderDetails(ReminderNew reminder) {
+  void _showReminderDetails(ReminderNew reminder) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    
+    // Obtener confirmaciones existentes
+    final confirmations = await _reminderService.getConfirmations(reminder.id);
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(reminder.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Descripción: ${reminder.description}'),
-            SizedBox(height: 8),
-            Text('Tipo: ${reminder.type}'),
-            SizedBox(height: 8),
-            Text('Rango: ${reminder.dateRangeText}'),
-            SizedBox(height: 8),
-            Text('Intervalo: ${reminder.intervalDisplayText}'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(reminder.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Descripción: ${reminder.description}'),
+                SizedBox(height: 8),
+                Text('Tipo: ${reminder.type}'),
+                SizedBox(height: 8),
+                Text('Rango: ${reminder.dateRangeText}'),
+                SizedBox(height: 8),
+                Text('Intervalo: ${reminder.intervalDisplayText}'),
+                SizedBox(height: 16),
+                Divider(),
+                SizedBox(height: 8),
+                Text(
+                  'Horarios de hoy:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                ...todayOccurrences.map((occurrence) {
+                  // Buscar si ya está confirmada esta ocurrencia
+                  final confirmation = confirmations.cast<ReminderConfirmation?>().firstWhere(
+                    (c) => 
+                      c!.scheduledTime.year == occurrence.year &&
+                      c.scheduledTime.month == occurrence.month &&
+                      c.scheduledTime.day == occurrence.day &&
+                      c.scheduledTime.hour == occurrence.hour &&
+                      c.scheduledTime.minute == occurrence.minute,
+                    orElse: () => null,
+                  );
+                  
+                  final isConfirmed = confirmation != null && 
+                      confirmation.status.toString() == 'ConfirmationStatus.CONFIRMED';
+                  
+                  final timeStr = '${occurrence.hour}:${occurrence.minute.toString().padLeft(2, '0')}';
+                  final isPast = occurrence.isBefore(now);
+                  
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isConfirmed 
+                          ? Colors.green.withOpacity(0.1)
+                          : isPast
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isConfirmed 
+                            ? Colors.green
+                            : isPast
+                                ? Colors.red
+                                : Colors.orange,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isConfirmed 
+                              ? Icons.check_circle
+                              : isPast
+                                  ? Icons.error
+                                  : Icons.schedule,
+                          color: isConfirmed 
+                              ? Colors.green
+                              : isPast
+                                  ? Colors.red
+                                  : Colors.orange,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (isConfirmed && confirmation != null && confirmation.confirmedAt != null)
+                                Text(
+                                  'Confirmado a las ${confirmation.confirmedAt!.hour}:${confirmation.confirmedAt!.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (!isConfirmed)
+                          ElevatedButton(
+                            onPressed: () async {
+                              final success = await _reminderService.confirmReminder(
+                                reminderId: reminder.id,
+                                scheduledTime: occurrence,
+                              );
+                              
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Recordatorio confirmado'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                // Cerrar diálogo y recargar
+                                Navigator.pop(context);
+                                _loadUserData();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Error al confirmar'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            child: Text('Confirmar'),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
       ),
     );
   }

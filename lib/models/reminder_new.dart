@@ -52,19 +52,22 @@ class ReminderNew {
     this.isActive = true,
     this.createdAt,
     this.updatedAt,
+    bool skipDateValidation = false,
   }) {
     // Validaciones
-    _validate();
+    _validate(skipDateValidation: skipDateValidation);
   }
 
-  void _validate() {
-    // No permitir fechas de inicio en el pasado
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final startDay = DateTime(startDate.year, startDate.month, startDate.day);
-    
-    if (startDay.isBefore(today)) {
-      throw ArgumentError('La fecha de inicio no puede ser anterior al día actual');
+  void _validate({bool skipDateValidation = false}) {
+    // No permitir fechas de inicio en el pasado (solo al crear nuevos)
+    if (!skipDateValidation) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+      
+      if (startDay.isBefore(today)) {
+        throw ArgumentError('La fecha de inicio no puede ser anterior al día actual');
+      }
     }
     
     // Fecha fin debe ser posterior a fecha inicio
@@ -104,6 +107,7 @@ class ReminderNew {
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool skipDateValidation = false,
   }) {
     return ReminderNew(
       id: id ?? this.id,
@@ -120,6 +124,7 @@ class ReminderNew {
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      skipDateValidation: skipDateValidation,
     );
   }
 
@@ -168,6 +173,7 @@ class ReminderNew {
       isActive: map['isActive'] ?? true,
       createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt']) : null,
       updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt']) : null,
+      skipDateValidation: true, // Permitir fechas pasadas al leer de DB
     );
   }
 

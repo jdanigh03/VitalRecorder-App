@@ -141,6 +141,7 @@ class ReminderServiceNew {
       final updatedReminder = reminder.copyWith(
         userId: userId,
         updatedAt: DateTime.now(),
+        skipDateValidation: true, // Permitir fechas pasadas al actualizar
       );
 
       final reminderData = updatedReminder.toMap();
