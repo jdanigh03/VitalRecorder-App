@@ -317,6 +317,17 @@ class BraceletService extends ChangeNotifier {
       stopReconnection();
       
       print("Conectado exitosamente a la manilla");
+      
+      // Sincronizar recordatorios automáticamente
+      print("🔄 Sincronizando recordatorios con la manilla...");
+      try {
+        await syncRemindersToBracelet();
+        print("✅ Recordatorios sincronizados exitosamente");
+      } catch (e) {
+        print("⚠️ Error sincronizando recordatorios: $e");
+        // No fallar la conexión por error de sincronización
+      }
+      
       return true;
 
     } catch (e) {
@@ -849,6 +860,17 @@ class BraceletService extends ChangeNotifier {
       await BraceletStorageService.saveLastConnectedBracelet(_connectedDevice!);
       
       notifyListeners();
+      
+      // Sincronizar recordatorios automáticamente después de reconectar
+      print('[RECONNECT] 🔄 Sincronizando recordatorios...');
+      try {
+        await syncRemindersToBracelet();
+        print('[RECONNECT] ✅ Recordatorios sincronizados exitosamente');
+      } catch (e) {
+        print('[RECONNECT] ⚠️ Error sincronizando recordatorios: $e');
+        // No fallar la reconexión por error de sincronización
+      }
+      
       return true;
       
     } catch (e) {

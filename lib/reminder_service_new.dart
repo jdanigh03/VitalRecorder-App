@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'models/reminder_new.dart';
 import 'models/reminder_confirmation.dart';
+import 'services/bracelet_service.dart';
 
 class ReminderServiceNew {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -55,6 +56,10 @@ class ReminderServiceNew {
       await _generateConfirmations(newReminder);
 
       print('✅ Recordatorio creado: $docId con ${newReminder.totalOccurrences} confirmaciones');
+      
+      // Sincronizar automáticamente con la manilla si está conectada
+      _syncWithBraceletSafely();
+      
       return true;
     } catch (e) {
       print('❌ Error creando recordatorio: $e');
@@ -160,6 +165,10 @@ class ReminderServiceNew {
       }
 
       print('✅ Recordatorio actualizado: ${reminder.id}');
+      
+      // Sincronizar automáticamente con la manilla si está conectada
+      _syncWithBraceletSafely();
+      
       return true;
     } catch (e) {
       print('❌ Error actualizando recordatorio: $e');
@@ -188,6 +197,10 @@ class ReminderServiceNew {
       });
 
       print('✅ Recordatorio desactivado: $reminderId');
+      
+      // Sincronizar automáticamente con la manilla si está conectada
+      _syncWithBraceletSafely();
+      
       return true;
     } catch (e) {
       print('❌ Error desactivando recordatorio: $e');
@@ -503,5 +516,27 @@ class ReminderServiceNew {
       data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
     }
     return ReminderConfirmation.fromMap(data);
+  }
+
+  /// Sincroniza con la manilla de forma segura (sin bloquear la operación principal)
+  void _syncWithBraceletSafely() {
+    // Ejecutar en el próximo ciclo del event loop para no bloquear
+    Future.delayed(Duration.zero, () async {
+      try {
+        final braceletService = BraceletService();
+        
+        // Solo sincronizar si hay una manilla conectada
+        if (braceletService.isConnected) {
+          print('🔄 Sincronizando recordatorios con la manilla...');
+          await braceletService.syncRemindersToBracelet();
+          print('✅ Manilla sincronizada automáticamente');
+        } else {
+          print('ℹ️ Manilla no conectada - sincronización omitida');
+        }
+      } catch (e) {
+        // No propagar el error para no afectar la operación principal
+        print('⚠️ Error sincronizando con manilla (no crítico): $e');
+      }
+    });
   }
 }
