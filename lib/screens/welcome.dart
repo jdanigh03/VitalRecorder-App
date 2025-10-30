@@ -19,6 +19,7 @@ import 'calendario.dart';
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
 import 'perfil_usuario.dart';
+import 'paciente_reportes_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -662,12 +663,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => const CalendarioScreen(),
+                                    builder: (context) => PacienteReportesScreen(),
                                   ),
                                 );
                               },
-                              icon: Icon(Icons.file_download, size: 18),
-                              label: Text('Exportar'),
+                              icon: Icon(Icons.analytics, size: 18),
+                              label: Text('Reportes'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                               ),
