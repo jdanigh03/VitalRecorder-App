@@ -74,10 +74,16 @@ class BraceletService extends ChangeNotifier {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       
-      // Obtener todas las ocurrencias de hoy de todos los recordatorios activos
+      // Obtener todas las ocurrencias de hoy de todos los recordatorios activos y NO pausados
       List<Map<String, dynamic>> todayOccurrences = [];
       
       for (final reminder in allReminders) {
+        // Excluir recordatorios pausados
+        if (reminder.isPaused) {
+          print("⛸️ Recordatorio pausado excluido de sincronización: ${reminder.title}");
+          continue;
+        }
+        
         if (reminder.hasOccurrencesOnDay(today)) {
           // Agregar todas las ocurrencias del día
           for (final time in reminder.dailyScheduleTimes) {
