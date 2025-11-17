@@ -124,7 +124,7 @@ class ExportUtils {
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
       decoration: pw.BoxDecoration(
-        color: PdfColors.blue50,
+        border: pw.Border.all(color: PdfColors.grey400),
         borderRadius: pw.BorderRadius.circular(10),
       ),
       child: pw.Column(
@@ -134,23 +134,23 @@ class ExportUtils {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'REPORTE DE ADHERENCIA',
+                'REPORTE DE CUMPLIMIENTO',
                 style: pw.TextStyle(
                   fontSize: 24,
                   fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blue800,
+                  color: PdfColors.black,
                 ),
               ),
               pw.Container(
                 padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: pw.BoxDecoration(
-                  color: PdfColors.blue800,
+                  border: pw.Border.all(color: PdfColors.grey700),
                   borderRadius: pw.BorderRadius.circular(20),
                 ),
                 child: pw.Text(
                   'VitalRecorder',
                   style: pw.TextStyle(
-                    color: PdfColors.white,
+                    color: PdfColors.black,
                     fontSize: 12,
                     fontWeight: pw.FontWeight.bold,
                   ),
@@ -188,21 +188,21 @@ class ExportUtils {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'RESUMEN DE ADHERENCIA',
+            'RESUMEN DE CUMPLIMIENTO',
             style: pw.TextStyle(
               fontSize: 18,
               fontWeight: pw.FontWeight.bold,
-              color: PdfColors.blue800,
+              color: PdfColors.black,
             ),
           ),
           pw.SizedBox(height: 12),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatCard('Tasa de Adherencia', '${stats['adherenceRate']}%', PdfColors.green),
-              _buildStatCard('Total Recordatorios', '${stats['total']}', PdfColors.blue),
-              _buildStatCard('Completados', '${stats['completed']}', PdfColors.green),
-              _buildStatCard('Omitidos', '${stats['missed']}', PdfColors.red),
+              _buildStatCard('Tasa de Cumplimiento', '${stats['adherenceRate']}%', PdfColors.grey700),
+              _buildStatCard('Total Recordatorios', '${stats['total']}', PdfColors.grey700),
+              _buildStatCard('Completados', '${stats['completed']}', PdfColors.grey700),
+              _buildStatCard('Omitidos', '${stats['missed']}', PdfColors.grey700),
             ],
           ),
         ],
@@ -215,7 +215,7 @@ class ExportUtils {
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(
-        color: color.shade(0.1),
+        border: pw.Border.all(color: PdfColors.grey400),
         borderRadius: pw.BorderRadius.circular(8),
       ),
       child: pw.Column(
@@ -225,7 +225,7 @@ class ExportUtils {
             style: pw.TextStyle(
               fontSize: 20,
               fontWeight: pw.FontWeight.bold,
-              color: color,
+              color: PdfColors.black,
             ),
           ),
           pw.Text(
@@ -252,7 +252,7 @@ class ExportUtils {
           style: pw.TextStyle(
             fontSize: 18,
             fontWeight: pw.FontWeight.bold,
-            color: PdfColors.blue800,
+            color: PdfColors.black,
           ),
         ),
         pw.SizedBox(height: 12),

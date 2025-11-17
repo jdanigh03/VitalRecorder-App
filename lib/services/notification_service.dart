@@ -161,13 +161,14 @@ class NotificationService {
     required String titulo,
     required String mensaje,
     Map<String, String>? data,
+    String tipo = 'general',
   }) async {
     final notificacionData = {
       'titulo': titulo,
       'mensaje': mensaje,
       'timestamp': FieldValue.serverTimestamp(),
       'leida': false,
-      'tipo': 'invitacion_aceptada',
+      'tipo': tipo,
       if (data != null) 'data': data,
     };
 
@@ -176,6 +177,55 @@ class NotificationService {
         .doc(destinatarioUserId)
         .collection('notificaciones_pendientes')
         .add(notificacionData);
+  }
+
+  /// Notifica a los cuidadores sobre la creación o edición de un recordatorio
+  Future<void> notificarCuidadoresSobreRecordatorio({
+    required String pacienteId,
+    required String pacienteNombre,
+    required String recordatorioTitulo,
+    required bool esNuevo,
+  }) async {
+    try {
+      // Obtener todos los cuidadores del paciente
+      final cuidadoresSnapshot = await FirebaseFirestore.instance
+          .collection('cuidadores')
+          .where('pacienteId', isEqualTo: pacienteId)
+          .where('estado', isEqualTo: 'aceptado')
+          .get();
+
+      if (cuidadoresSnapshot.docs.isEmpty) {
+        print('No hay cuidadores para notificar');
+        return;
+      }
+
+      // Crear el mensaje apropiado
+      final accion = esNuevo ? 'ha creado' : 'ha editado';
+      final titulo = esNuevo ? '¡Nuevo recordatorio!' : 'Recordatorio actualizado';
+      final mensaje = '$pacienteNombre $accion el recordatorio "$recordatorioTitulo"';
+
+      // Enviar notificación a cada cuidador
+      for (final doc in cuidadoresSnapshot.docs) {
+        final cuidadorId = doc.data()['cuidadorId'] as String?;
+        if (cuidadorId != null) {
+          await enviarNotificacionPushAUsuario(
+            destinatarioUserId: cuidadorId,
+            titulo: titulo,
+            mensaje: mensaje,
+            data: {
+              'tipo': 'recordatorio_modificado',
+              'pacienteId': pacienteId,
+              'recordatorioTitulo': recordatorioTitulo,
+              'accion': esNuevo ? 'creado' : 'editado',
+            },
+          );
+        }
+      }
+
+      print('✅ Notificaciones enviadas a ${cuidadoresSnapshot.docs.length} cuidador(es)');
+    } catch (e) {
+      print('❌ Error notificando a cuidadores: $e');
+    }
   }
 
   /// Obtiene las notificaciones pendientes para el usuario actual

@@ -136,7 +136,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           unselectedLabelColor: Colors.white70,
           tabs: [
             Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
-            Tab(text: 'Adherencia', icon: Icon(Icons.trending_up, size: 16)),
+            Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
             Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
           ],
         ),
@@ -173,7 +173,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
       controller: _tabController,
       children: [
         _buildResumenTab(),
-        _buildAdherenciaTab(),
+        _buildCumplimientoTab(),
         _buildExportarTab(),
       ],
     );
@@ -418,7 +418,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           '${_stats['recordatoriosActivos'] ?? 0} activos',
         ),
         _buildMetricCard(
-          'Mi Adherencia',
+          'Mi Cumplimiento',
           '${_stats['adherenciaGeneral'] ?? 0}%',
           Icons.trending_up,
           Colors.green,
@@ -501,7 +501,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
   Widget _buildTrendChart() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Adherencia (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
+      title: 'Evolución de Cumplimiento (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
     );
   }
 
@@ -594,23 +594,23 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
     );
   }
 
-  Widget _buildAdherenciaTab() {
+  Widget _buildCumplimientoTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Mi Análisis de Adherencia',
+            'Mi Análisis de Cumplimiento',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
           
-          // Métricas de adherencia
+          // Métricas de cumplimiento
           _buildAdherenceMetrics(),
           SizedBox(height: 20),
           
-          // Evolución de adherencia
+          // Evolución de cumplimiento
           _buildAdherenceEvolution(),
           SizedBox(height: 20),
           
@@ -642,7 +642,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
                       color: Colors.green,
                     ),
                   ),
-                  Text('Mi Adherencia'),
+                  Text('Mi Cumplimiento'),
                 ],
               ),
             ),
@@ -680,7 +680,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
   Widget _buildAdherenceEvolution() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Mi Adherencia',
+      title: 'Evolución de Mi Cumplimiento',
       primaryColor: Colors.green,
     );
   }
@@ -692,15 +692,15 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
     IconData icon;
 
     if (adherence >= 80) {
-      message = '¡Excelente trabajo! Tu adherencia es muy buena. ¡Sigue así!';
+      message = '¡Excelente trabajo! Tu cumplimiento es muy bueno. ¡Sigue así!';
       color = Colors.green;
       icon = Icons.emoji_events;
     } else if (adherence >= 60) {
-      message = '¡Buen trabajo! Estás en el camino correcto. Intenta mejorar un poco más.';
+      message = '¡Buen trabajo! Estás en el camino correcto.';
       color = Colors.orange;
       icon = Icons.thumb_up;
     } else {
-      message = 'Puedes mejorar. Recuerda que seguir tus recordatorios es importante para tu salud.';
+      message = 'Recuerda que seguir tus recordatorios es importante para tu salud.';
       color = Colors.red;
       icon = Icons.favorite;
     }
@@ -761,8 +761,8 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           ),
           
           _buildExportOption(
-            'Resumen de Adherencia',
-            'Métricas clave de mi adherencia',
+            'Resumen de Cumplimiento',
+            'Métricas clave de mi cumplimiento',
             Icons.assessment,
             Color(0xFF1E3A5F),
             () => _exportAdherenceSummary(),
@@ -990,7 +990,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
             children: [
               CircularProgressIndicator(color: Color(0xFF4A90E2)),
               SizedBox(height: 16),
-              Text('Generando resumen de adherencia...'),
+              Text('Generando resumen de cumplimiento...'),
             ],
           ),
         ),
@@ -1009,7 +1009,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Resumen de adherencia generado exitosamente'),
+          content: Text('Resumen de cumplimiento generado exitosamente'),
           backgroundColor: Colors.green,
         ),
       );

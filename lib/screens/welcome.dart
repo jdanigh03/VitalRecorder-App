@@ -413,45 +413,53 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                 '${_selectedReminderIds.length} seleccionados',
                 style: TextStyle(color: Colors.white, fontSize: 18),
               )
-            : Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+            : GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PerfilUsuarioScreen()),
+                  );
+                },
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: CircleAvatar(
+                        backgroundColor: Colors.white24,
+                        radius: 18,
+                        child: Icon(Icons.person, color: Colors.white, size: 20),
+                      ),
                     ),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white24,
-                      radius: 18,
-                      child: Icon(Icons.person, color: Colors.white, size: 20),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Bienvenido',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Bienvenido',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                        Text(
-                          _userName.toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                          Text(
+                            _userName.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
         // Botones de acción diferentes según el modo
         actions: _isMultiSelectMode
@@ -528,15 +536,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                         ),
                       ),
                   ],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined, color: Colors.white),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AjustesScreen()),
-                    );
-                  },
                 ),
               ],
       ),

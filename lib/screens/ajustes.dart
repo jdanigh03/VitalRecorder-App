@@ -169,15 +169,6 @@ class _AjustesScreenState extends State<AjustesScreen> {
                 _showLanguageDialog(context);
               },
             ),
-            _buildNavigationCard(
-              'Tema',
-              'Claro',
-              Icons.palette,
-              Colors.pink,
-              () {
-                _showThemeDialog(context);
-              },
-            ),
             _buildSectionHeader('Acerca de'),
             _buildNavigationCard(
               'Ayuda y soporte',

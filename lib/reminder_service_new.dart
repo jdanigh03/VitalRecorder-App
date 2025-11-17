@@ -3,10 +3,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'models/reminder_new.dart';
 import 'models/reminder_confirmation.dart';
 import 'services/bracelet_service.dart';
+import 'services/notification_service.dart';
+import 'services/user_service.dart';
 
 class ReminderServiceNew {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NotificationService _notificationService = NotificationService();
+  final UserService _userService = UserService();
 
   // Colecciones
   CollectionReference get _remindersCollection =>
@@ -59,6 +63,9 @@ class ReminderServiceNew {
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
+      
+      // Notificar a los cuidadores sobre el nuevo recordatorio
+      await _notificarCuidadores(newReminder, esNuevo: true);
       
       return true;
     } catch (e) {
@@ -169,6 +176,9 @@ class ReminderServiceNew {
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
       
+      // Notificar a los cuidadores sobre la edición
+      await _notificarCuidadores(updatedReminder, esNuevo: false);
+      
       return true;
     } catch (e) {
       print('❌ Error actualizando recordatorio: $e');
@@ -186,6 +196,66 @@ class ReminderServiceNew {
       }
     }
     return false;
+  }
+
+  /// Notifica a los cuidadores sobre cambios en el recordatorio
+  Future<void> _notificarCuidadores(ReminderNew reminder, {required bool esNuevo}) async {
+    try {
+      // Obtener nombre del paciente
+      final userData = await _userService.getUserData(reminder.userId ?? '');
+      final pacienteNombre = userData?.persona.nombres ?? 'Un paciente';
+
+      // Enviar notificación
+      await _notificationService.notificarCuidadoresSobreRecordatorio(
+        pacienteId: reminder.userId ?? '',
+        pacienteNombre: pacienteNombre,
+        recordatorioTitulo: reminder.title,
+        esNuevo: esNuevo,
+      );
+    } catch (e) {
+      print('⚠️ Error al notificar cuidadores: $e');
+      // No lanzar error para no afectar la creación/edición del recordatorio
+    }
+  }
+
+  /// Pausa un recordatorio
+  Future<bool> pauseReminder(String reminderId) async {
+    try {
+      await _remindersCollection.doc(reminderId).update({
+        'isPaused': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Recordatorio pausado: $reminderId');
+      
+      // Sincronizar automáticamente con la manilla si está conectada
+      _syncWithBraceletSafely();
+      
+      return true;
+    } catch (e) {
+      print('❌ Error pausando recordatorio: $e');
+      return false;
+    }
+  }
+
+  /// Reanuda un recordatorio pausado
+  Future<bool> resumeReminder(String reminderId) async {
+    try {
+      await _remindersCollection.doc(reminderId).update({
+        'isPaused': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Recordatorio reanudado: $reminderId');
+      
+      // Sincronizar automáticamente con la manilla si está conectada
+      _syncWithBraceletSafely();
+      
+      return true;
+    } catch (e) {
+      print('❌ Error reanudando recordatorio: $e');
+      return false;
+    }
   }
 
   /// Desactiva un recordatorio (borrado lógico)

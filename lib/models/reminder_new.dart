@@ -10,6 +10,9 @@ class ReminderNew {
   final String title;
   final String description;
   
+  // Checklist de requerimientos (opcional)
+  final List<String>? checklist;
+  
   // Tipo: 'medication' o 'activity'
   final String type;
   
@@ -18,8 +21,12 @@ class ReminderNew {
   final DateTime endDate;   // Debe ser mayor que startDate
   
   // Intervalo entre recordatorios
-  final IntervalType intervalType; // HOURS, DAYS
+  final IntervalType intervalType; // HOURS, DAYS, SPECIFIC_DAYS
   final int intervalValue; // Ej: 8 para "cada 8 horas"
+  
+  // Días específicos (solo si intervalType == SPECIFIC_DAYS)
+  // Lista de días de la semana: 1=Lunes, 2=Martes, ... 7=Domingo
+  final List<int>? specificDays;
   
   // Horarios calculados para un día (personalizables)
   // Ej: Si intervalValue=8 y startDate tiene hora 08:00, 
@@ -32,6 +39,7 @@ class ReminderNew {
   
   // Estado
   final bool isActive; // Para borrado lógico
+  final bool isPaused; // Para pausar la planificación
   
   // Metadatos
   final DateTime? createdAt;
@@ -41,15 +49,18 @@ class ReminderNew {
     required this.id,
     required this.title,
     required this.description,
+    this.checklist,
     required this.type,
     required this.startDate,
     required this.endDate,
     required this.intervalType,
     required this.intervalValue,
     required this.dailyScheduleTimes,
+    this.specificDays,
     this.userId,
     this.createdBy,
     this.isActive = true,
+    this.isPaused = false,
     this.createdAt,
     this.updatedAt,
     bool skipDateValidation = false,
@@ -96,15 +107,18 @@ class ReminderNew {
     String? id,
     String? title,
     String? description,
+    List<String>? checklist,
     String? type,
     DateTime? startDate,
     DateTime? endDate,
     IntervalType? intervalType,
     int? intervalValue,
     List<TimeOfDay>? dailyScheduleTimes,
+    List<int>? specificDays,
     String? userId,
     String? createdBy,
     bool? isActive,
+    bool? isPaused,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool skipDateValidation = false,
@@ -113,15 +127,18 @@ class ReminderNew {
       id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
+      checklist: checklist ?? this.checklist,
       type: type ?? this.type,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       intervalType: intervalType ?? this.intervalType,
       intervalValue: intervalValue ?? this.intervalValue,
       dailyScheduleTimes: dailyScheduleTimes ?? this.dailyScheduleTimes,
+      specificDays: specificDays ?? this.specificDays,
       userId: userId ?? this.userId,
       createdBy: createdBy ?? this.createdBy,
       isActive: isActive ?? this.isActive,
+      isPaused: isPaused ?? this.isPaused,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       skipDateValidation: skipDateValidation,
@@ -134,6 +151,7 @@ class ReminderNew {
       'id': id,
       'title': title,
       'description': description,
+      if (checklist != null) 'checklist': checklist,
       'type': type,
       'startDate': startDate.toIso8601String(),
       'endDate': endDate.toIso8601String(),
@@ -143,9 +161,11 @@ class ReminderNew {
         'hour': t.hour,
         'minute': t.minute,
       }).toList(),
+      if (specificDays != null) 'specificDays': specificDays,
       'userId': userId,
       'createdBy': createdBy,
       'isActive': isActive,
+      'isPaused': isPaused,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
@@ -157,6 +177,7 @@ class ReminderNew {
       id: map['id'] ?? '',
       title: map['title'] ?? '',
       description: map['description'] ?? '',
+      checklist: map['checklist'] != null ? List<String>.from(map['checklist']) : null,
       type: map['type'] ?? 'medication',
       startDate: DateTime.parse(map['startDate']),
       endDate: DateTime.parse(map['endDate']),
@@ -168,9 +189,11 @@ class ReminderNew {
       dailyScheduleTimes: (map['dailyScheduleTimes'] as List<dynamic>?)
           ?.map((t) => TimeOfDay(hour: t['hour'], minute: t['minute']))
           .toList() ?? [],
+      specificDays: map['specificDays'] != null ? List<int>.from(map['specificDays']) : null,
       userId: map['userId'],
       createdBy: map['createdBy'],
       isActive: map['isActive'] ?? true,
+      isPaused: map['isPaused'] ?? false,
       createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt']) : null,
       updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt']) : null,
       skipDateValidation: true, // Permitir fechas pasadas al leer de DB
@@ -195,20 +218,30 @@ class ReminderNew {
     
     // Iterar día por día
     while (currentDate.isBefore(endDay) || currentDate.isAtSameMomentAs(endDay)) {
-      // Agregar todos los horarios del día
-      for (final time in dailyScheduleTimes) {
-        final scheduled = DateTime(
-          currentDate.year,
-          currentDate.month,
-          currentDate.day,
-          time.hour,
-          time.minute,
-        );
-        
-        // Solo agregar si está dentro del rango (considerando la hora también)
-        if ((scheduled.isAfter(startDate) || scheduled.isAtSameMomentAs(startDate)) &&
-            (scheduled.isBefore(endDate) || scheduled.isAtSameMomentAs(endDate))) {
-          scheduledTimes.add(scheduled);
+      // Si es SPECIFIC_DAYS, verificar si el día actual está en la lista
+      bool shouldAddThisDay = true;
+      if (intervalType == IntervalType.SPECIFIC_DAYS && specificDays != null) {
+        // weekday: 1=Monday, 2=Tuesday, ... 7=Sunday
+        final currentWeekday = currentDate.weekday;
+        shouldAddThisDay = specificDays!.contains(currentWeekday);
+      }
+      
+      if (shouldAddThisDay) {
+        // Agregar todos los horarios del día
+        for (final time in dailyScheduleTimes) {
+          final scheduled = DateTime(
+            currentDate.year,
+            currentDate.month,
+            currentDate.day,
+            time.hour,
+            time.minute,
+          );
+          
+          // Solo agregar si está dentro del rango (considerando la hora también)
+          if ((scheduled.isAfter(startDate) || scheduled.isAtSameMomentAs(startDate)) &&
+              (scheduled.isBefore(endDate) || scheduled.isAtSameMomentAs(endDate))) {
+            scheduledTimes.add(scheduled);
+          }
         }
       }
       
@@ -293,9 +326,17 @@ class ReminderNew {
   String get intervalDisplayText {
     if (intervalType == IntervalType.HOURS) {
       return 'Cada $intervalValue ${intervalValue == 1 ? 'hora' : 'horas'}';
-    } else {
+    } else if (intervalType == IntervalType.DAYS) {
       return 'Cada $intervalValue ${intervalValue == 1 ? 'día' : 'días'}';
+    } else if (intervalType == IntervalType.SPECIFIC_DAYS) {
+      if (specificDays == null || specificDays!.isEmpty) {
+        return 'Días específicos';
+      }
+      final dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+      final selectedDayNames = specificDays!.map((d) => dayNames[d - 1]).join(', ');
+      return 'Los $selectedDayNames';
     }
+    return 'Intervalo no definido';
   }
 
   /// Duración total en días
@@ -324,6 +365,7 @@ class ReminderNew {
 enum IntervalType {
   HOURS,  // Por horas (ej: cada 8 horas)
   DAYS,   // Por días (ej: cada 2 días)
+  SPECIFIC_DAYS,  // Días específicos de la semana
 }
 
 /// Extensión para obtener texto amigable del intervalo
@@ -334,6 +376,8 @@ extension IntervalTypeExtension on IntervalType {
         return 'Horas';
       case IntervalType.DAYS:
         return 'Días';
+      case IntervalType.SPECIFIC_DAYS:
+        return 'Días en específico';
     }
   }
 }
@@ -344,6 +388,7 @@ enum DurationPreset {
   FIVE_DAYS,
   ONE_WEEK,
   ONE_MONTH,
+  ONE_YEAR,
   CUSTOM,
 }
 
@@ -356,6 +401,8 @@ extension DurationPresetExtension on DurationPreset {
         return '1 semana';
       case DurationPreset.ONE_MONTH:
         return '1 mes';
+      case DurationPreset.ONE_YEAR:
+        return '1 año';
       case DurationPreset.CUSTOM:
         return 'Personalizado';
     }
@@ -372,6 +419,12 @@ extension DurationPresetExtension on DurationPreset {
         return DateTime(
           startDate.year,
           startDate.month + 1,
+          startDate.day,
+        );
+      case DurationPreset.ONE_YEAR:
+        return DateTime(
+          startDate.year + 1,
+          startDate.month,
           startDate.day,
         );
       case DurationPreset.CUSTOM:

@@ -155,6 +155,282 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
     }
   }
 
+  void _mostrarFormularioRegistroNuevoCuidador() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.person_add,
+                            color: Colors.green,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'Registrar Nuevo Cuidador',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E3A5F),
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info, color: Colors.green[600], size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Registro e Invitación',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Ingresa los datos del cuidador. Se le enviará un correo para que complete su registro y acepte ser tu cuidador.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.green[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20),
+                TextFormField(
+                  controller: _nombreController,
+                  decoration: InputDecoration(
+                    labelText: 'Nombre completo',
+                    hintText: 'Juan Pérez',
+                    prefixIcon: Icon(Icons.person, color: Colors.green),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Por favor ingresa el nombre';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'Correo electrónico',
+                    hintText: 'cuidador@email.com',
+                    prefixIcon: Icon(Icons.email, color: Colors.green),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Por favor ingresa el correo';
+                    }
+                    if (!value.contains('@') || !value.contains('.')) {
+                      return 'Ingresa un correo válido';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: _telefonoController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Teléfono (opcional)',
+                    hintText: '+52 123 456 7890',
+                    prefixIcon: Icon(Icons.phone, color: Colors.green),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                ),
+                SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _relacionSeleccionada,
+                  decoration: InputDecoration(
+                    labelText: 'Relación con el paciente',
+                    prefixIcon: Icon(Icons.people, color: Colors.green),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  items: _relaciones.map((relacion) {
+                    return DropdownMenuItem(
+                      value: relacion,
+                      child: Text(relacion),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _relacionSeleccionada = value!;
+                    });
+                  },
+                ),
+                SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSendingInvitation ? null : () {
+                      if (_formKey.currentState!.validate()) {
+                        _registrarYEnviarInvitacion();
+                      }
+                    },
+                    icon: _isSendingInvitation 
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Icon(Icons.send, color: Colors.white),
+                    label: Text(
+                      _isSendingInvitation ? 'Registrando...' : 'Registrar y Enviar Invitación',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _registrarYEnviarInvitacion() async {
+    setState(() => _isSendingInvitation = true);
+    
+    try {
+      // Aquí deberías implementar la lógica para:
+      // 1. Enviar un correo de invitación al nuevo cuidador
+      // 2. Crear un registro temporal de invitación pendiente
+      // 3. Cuando el cuidador se registre, asociarlo automáticamente
+      
+      final invitacionId = await _invitacionService.enviarInvitacion(
+        cuidadorEmail: _emailController.text.trim(),
+        cuidadorNombre: _nombreController.text.trim(),
+        relacion: _relacionSeleccionada,
+      );
+      
+      if (invitacionId != null) {
+        await _cargarCuidadores();
+        await _cargarInvitaciones();
+        
+        _nombreController.clear();
+        _emailController.clear();
+        _telefonoController.clear();
+        setState(() {
+          _relacionSeleccionada = 'Familiar';
+          _isSendingInvitation = false;
+        });
+
+        Navigator.pop(context);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.send, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text('Invitación enviada. El cuidador recibirá un correo para registrarse y aceptar.'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isSendingInvitation = false);
+      Navigator.pop(context);
+      _mostrarErrorSnackBar('Error al enviar la invitación: ${e.toString()}');
+    }
+  }
+
   void _mostrarFormulario() {
     showModalBottomSheet(
       context: context,
@@ -326,6 +602,23 @@ class _AsignarCuidadorScreenState extends State<AsignarCuidadorScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _mostrarFormularioRegistroNuevoCuidador();
+                    },
+                    icon: Icon(Icons.person_add_outlined, size: 20),
+                    label: Text(
+                      '¿No está registrado? Registrar nuevo cuidador',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Color(0xFF4A90E2),
                     ),
                   ),
                 ),
