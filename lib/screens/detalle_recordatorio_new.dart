@@ -28,7 +28,33 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
   void initState() {
     super.initState();
     _currentReminder = widget.reminder;
-    _loadConfirmations();
+    _loadReminderData();
+  }
+
+  /// Recarga el recordatorio desde Firestore y sus confirmaciones
+  Future<void> _loadReminderData() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      // Recargar el recordatorio desde Firestore para obtener el estado actualizado
+      final updatedReminder = await _reminderService.getReminderById(_currentReminder.id);
+      if (updatedReminder != null) {
+        setState(() {
+          _currentReminder = updatedReminder;
+        });
+      }
+      
+      // Cargar confirmaciones del recordatorio
+      _confirmations = await _reminderService.getConfirmations(_currentReminder.id);
+      
+      // Cargar estadísticas
+      _stats = await _reminderService.getReminderStats(_currentReminder.id);
+      
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print('Error cargando datos del recordatorio: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadConfirmations() async {
@@ -63,6 +89,14 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _currentReminder.isPaused ? Icons.play_arrow : Icons.pause,
+              color: Colors.white,
+            ),
+            onPressed: () => _togglePauseReminder(),
+            tooltip: _currentReminder.isPaused ? 'Reanudar' : 'Pausar',
+          ),
           IconButton(
             icon: const Icon(Icons.archive, color: Colors.white),
             onPressed: () => _showArchiveDialog(),
@@ -207,7 +241,7 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
       child: Column(
         children: [
           Text(
-            'Estadísticas de Adherencia',
+            'Estadísticas de Cumplimiento',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -237,7 +271,7 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
                 Icon(Icons.timeline, color: adherenceColor),
                 SizedBox(width: 8),
                 Text(
-                  'Adherencia: $adherenceRate%',
+                  'Cumplimiento: $adherenceRate%',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -394,6 +428,10 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
         statusColor = Colors.orange;
         statusIcon = Icons.pending;
         break;
+      case ConfirmationStatus.PAUSED:
+        statusColor = Colors.grey;
+        statusIcon = Icons.pause_circle;
+        break;
     }
 
     return Container(
@@ -532,6 +570,119 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
     }
   }
 
+  Future<void> _togglePauseReminder() async {
+    try {
+      final wasPaused = _currentReminder.isPaused;
+      
+      // Mostrar confirmación
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                wasPaused ? Icons.play_arrow : Icons.pause,
+                color: wasPaused ? Colors.green : Colors.orange,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(wasPaused ? 'Reanudar Recordatorio' : 'Pausar Recordatorio'),
+              ),
+            ],
+          ),
+          content: Text(
+            wasPaused
+                ? '¿Deseas reanudar este recordatorio? Las notificaciones volverán a activarse.'
+                : '¿Deseas pausar este recordatorio? No recibirás notificaciones hasta que lo reanudes.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: wasPaused ? Colors.green : Colors.orange,
+              ),
+              child: Text(wasPaused ? 'Reanudar' : 'Pausar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return;
+
+      setState(() => _isLoading = true);
+
+      // Llamar al servicio
+      bool success;
+      if (wasPaused) {
+        success = await _reminderService.resumeReminder(_currentReminder.id);
+      } else {
+        success = await _reminderService.pauseReminder(_currentReminder.id);
+      }
+
+      if (success) {
+        // Actualizar el recordatorio local y recargar confirmaciones
+        setState(() {
+          _currentReminder = _currentReminder.copyWith(
+            isPaused: !wasPaused,
+            skipDateValidation: true, // Permitir fechas pasadas
+          );
+        });
+
+        // Recargar confirmaciones para mostrar cambios de estado
+        await _loadConfirmations();
+
+        // Mostrar mensaje de éxito
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(
+                    wasPaused ? Icons.play_arrow : Icons.pause,
+                    color: Colors.white,
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      wasPaused
+                          ? 'Recordatorio reanudado'
+                          : 'Recordatorio pausado',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: wasPaused ? Colors.green : Colors.orange,
+            ),
+          );
+        }
+      } else {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al modificar el recordatorio'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error en togglePause: $e');
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _showArchiveDialog() {
     showDialog(
       context: context,
@@ -539,11 +690,13 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
         ),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.archive_outlined, color: Colors.blueGrey),
             SizedBox(width: 8),
-            Text('Archivar Recordatorio'),
+            Expanded(
+              child: Text('Archivar Recordatorio'),
+            ),
           ],
         ),
         content: Column(

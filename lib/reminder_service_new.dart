@@ -221,12 +221,45 @@ class ReminderServiceNew {
   /// Pausa un recordatorio
   Future<bool> pauseReminder(String reminderId) async {
     try {
+      final now = DateTime.now();
+      
+      // Actualizar el recordatorio
       await _remindersCollection.doc(reminderId).update({
         'isPaused': true,
+        'pausedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Recordatorio pausado: $reminderId');
+      // Marcar todas las confirmaciones pendientes futuras como PAUSED
+      final confirmations = await _confirmationsCollection
+          .where('reminderId', isEqualTo: reminderId)
+          .where('status', isEqualTo: 'PENDING')
+          .get();
+
+      WriteBatch batch = _firestore.batch();
+      int count = 0;
+
+      for (final doc in confirmations.docs) {
+        final confirmation = ReminderConfirmation.fromMap(doc.data() as Map<String, dynamic>);
+        
+        // Solo pausar confirmaciones futuras o muy recientes (menos de 15 minutos atrás)
+        if (confirmation.scheduledTime.isAfter(now.subtract(Duration(minutes: 15)))) {
+          batch.update(doc.reference, {'status': 'PAUSED'});
+          count++;
+          
+          if (count >= 500) {
+            await batch.commit();
+            batch = _firestore.batch();
+            count = 0;
+          }
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+
+      print('✅ Recordatorio pausado: $reminderId ($count confirmaciones marcadas como pausadas)');
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
@@ -241,12 +274,46 @@ class ReminderServiceNew {
   /// Reanuda un recordatorio pausado
   Future<bool> resumeReminder(String reminderId) async {
     try {
+      final now = DateTime.now();
+      
+      // Actualizar el recordatorio
       await _remindersCollection.doc(reminderId).update({
         'isPaused': false,
+        'resumedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Recordatorio reanudado: $reminderId');
+      // Cambiar confirmaciones PAUSED futuras de vuelta a PENDING
+      final confirmations = await _confirmationsCollection
+          .where('reminderId', isEqualTo: reminderId)
+          .where('status', isEqualTo: 'PAUSED')
+          .get();
+
+      WriteBatch batch = _firestore.batch();
+      int count = 0;
+
+      for (final doc in confirmations.docs) {
+        final confirmation = ReminderConfirmation.fromMap(doc.data() as Map<String, dynamic>);
+        
+        // Solo reactivar confirmaciones futuras
+        if (confirmation.scheduledTime.isAfter(now)) {
+          batch.update(doc.reference, {'status': 'PENDING'});
+          count++;
+          
+          if (count >= 500) {
+            await batch.commit();
+            batch = _firestore.batch();
+            count = 0;
+          }
+        }
+        // Las confirmaciones pausadas del pasado se quedan como PAUSED (no cuentan)
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+
+      print('✅ Recordatorio reanudado: $reminderId ($count confirmaciones reactivadas)');
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
@@ -519,7 +586,16 @@ class ReminderServiceNew {
   /// Obtiene estadísticas de adherencia de un recordatorio
   Future<Map<String, dynamic>> getReminderStats(String reminderId) async {
     try {
-      final confirmations = await getConfirmationsByReminder(reminderId);
+      final allConfirmations = await getConfirmationsByReminder(reminderId);
+      
+      // IMPORTANTE: Excluir confirmaciones pausadas de las estadísticas
+      final confirmations = allConfirmations.where((c) => 
+        c.status != ConfirmationStatus.PAUSED
+      ).toList();
+      
+      final paused = allConfirmations.where((c) => 
+        c.status == ConfirmationStatus.PAUSED
+      ).length;
       
       final total = confirmations.length;
       final confirmed = confirmations.where((c) => 
@@ -539,6 +615,7 @@ class ReminderServiceNew {
         'confirmed': confirmed,
         'missed': missed,
         'pending': pending,
+        'paused': paused, // Incluir pausadas para referencia
         'adherenceRate': adherenceRate,
       };
     } catch (e) {
@@ -548,6 +625,7 @@ class ReminderServiceNew {
         'confirmed': 0,
         'missed': 0,
         'pending': 0,
+        'paused': 0,
         'adherenceRate': '0.0',
       };
     }

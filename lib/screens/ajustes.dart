@@ -559,7 +559,9 @@ class _AjustesScreenState extends State<AjustesScreen> {
           children: [
             Icon(Icons.help_outline, color: Color(0xFF4A90E2)),
             SizedBox(width: 12),
-            Text('Centro de Ayuda'),
+            Expanded(
+              child: Text('Centro de Ayuda'),
+            ),
           ],
         ),
         content: SingleChildScrollView(
@@ -709,7 +711,9 @@ class _AjustesScreenState extends State<AjustesScreen> {
           children: [
             Icon(Icons.health_and_safety, color: Color(0xFF4A90E2)),
             SizedBox(width: 12),
-            Text('Recordatorios de Salud'),
+            Expanded(
+              child: Text('Recordatorios de Salud'),
+            ),
           ],
         ),
         content: Column(

@@ -90,7 +90,7 @@ class _CuidadorAdherenciaScreenState extends State<CuidadorAdherenciaScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Adherencia',
+              'Cumplimiento',
               style: TextStyle(color: Colors.white, fontSize: 20),
             ),
             Text(
@@ -155,7 +155,7 @@ class _CuidadorAdherenciaScreenState extends State<CuidadorAdherenciaScreen> {
         _buildGlobalStatsCard(),
         SizedBox(height: 24),
 
-        // Gráfico de adherencia
+        // Gráfico de cumplimiento
         _buildAdherenceChart(),
         SizedBox(height: 24),
 

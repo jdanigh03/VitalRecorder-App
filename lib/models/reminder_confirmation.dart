@@ -64,15 +64,27 @@ class ReminderConfirmation {
       id: map['id'] ?? '',
       reminderId: map['reminderId'] ?? '',
       userId: map['userId'] ?? '',
-      scheduledTime: DateTime.parse(map['scheduledTime']),
-      confirmedAt: map['confirmedAt'] != null ? DateTime.parse(map['confirmedAt']) : null,
+      scheduledTime: _parseDateTime(map['scheduledTime']),
+      confirmedAt: map['confirmedAt'] != null ? _parseDateTime(map['confirmedAt']) : null,
       status: ConfirmationStatus.values.firstWhere(
         (e) => e.toString().split('.').last == map['status'],
         orElse: () => ConfirmationStatus.PENDING,
       ),
       notes: map['notes'],
-      createdAt: DateTime.parse(map['createdAt']),
+      createdAt: _parseDateTime(map['createdAt']),
     );
+  }
+
+  /// Helper para convertir Timestamp o String a DateTime
+  static DateTime _parseDateTime(dynamic value) {
+    if (value is String) {
+      return DateTime.parse(value);
+    } else if (value.runtimeType.toString() == 'Timestamp') {
+      // Firestore Timestamp
+      return (value as dynamic).toDate();
+    } else {
+      throw ArgumentError('Tipo de fecha no soportado: ${value.runtimeType}');
+    }
   }
 
   /// Marca la confirmación como confirmada
@@ -91,6 +103,13 @@ class ReminderConfirmation {
     );
   }
 
+  /// Marca la confirmación como pausada
+  ReminderConfirmation markAsPaused() {
+    return copyWith(
+      status: ConfirmationStatus.PAUSED,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -106,6 +125,7 @@ enum ConfirmationStatus {
   PENDING,   // Pendiente de confirmar
   CONFIRMED, // Confirmado por el paciente
   MISSED,    // Omitido/No confirmado
+  PAUSED,    // Pausado (no cuenta en estadísticas)
 }
 
 extension ConfirmationStatusExtension on ConfirmationStatus {
@@ -117,6 +137,8 @@ extension ConfirmationStatusExtension on ConfirmationStatus {
         return 'Confirmado';
       case ConfirmationStatus.MISSED:
         return 'Omitido';
+      case ConfirmationStatus.PAUSED:
+        return 'Pausado';
     }
   }
 
@@ -129,6 +151,8 @@ extension ConfirmationStatusExtension on ConfirmationStatus {
         return '#4CAF50'; // Verde
       case ConfirmationStatus.MISSED:
         return '#F44336'; // Rojo
+      case ConfirmationStatus.PAUSED:
+        return '#9E9E9E'; // Gris
     }
   }
 }
