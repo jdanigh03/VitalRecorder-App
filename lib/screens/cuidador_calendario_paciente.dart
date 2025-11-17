@@ -102,6 +102,9 @@ class _CuidadorCalendarioPacienteScreenState
   }
 
   Color _getReminderStatusColor(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Colors.grey;
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Colors.grey;
 
@@ -110,6 +113,9 @@ class _CuidadorCalendarioPacienteScreenState
   }
 
   IconData _getReminderStatusIcon(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Icons.pause;
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Icons.check_circle;
 
@@ -118,6 +124,9 @@ class _CuidadorCalendarioPacienteScreenState
   }
 
   String _getReminderStatusText(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return 'FINALIZADO';
 

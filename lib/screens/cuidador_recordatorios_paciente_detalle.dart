@@ -490,8 +490,13 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     Color borderColor = Colors.grey[300]!;
     Color iconColor = Colors.grey[600]!;
     
-    // ReminderNew no tiene isCompleted, todo se maneja por confirmaciones
-    if (isVencido) {
+    // Verificar si está pausado primero
+    if (recordatorio.isPaused) {
+      // Pausado: Gris
+      cardColor = Colors.grey[100]!;
+      borderColor = Colors.grey[400]!;
+      iconColor = Colors.grey[600]!;
+    } else if (isVencido) {
       // Vencido: Rojo
       cardColor = Colors.red[50]!;
       borderColor = Colors.red[200]!;
@@ -615,7 +620,16 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                 SizedBox(width: 8),
                 Column(
                   children: [
-                    if (!recordatorio.isActive)
+                    if (recordatorio.isPaused)
+                      Container(
+                        padding: EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.pause, color: Colors.grey[700], size: 16),
+                      )
+                    else if (!recordatorio.isActive)
                       Container(
                         padding: EdgeInsets.all(4),
                         decoration: BoxDecoration(

@@ -101,6 +101,9 @@ class _CalendarioScreenState extends State<CalendarioScreen>
   }
 
   Color _getReminderStatusColor(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Colors.grey;
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Colors.grey; // Finalizado
     
@@ -109,6 +112,9 @@ class _CalendarioScreenState extends State<CalendarioScreen>
   }
 
   IconData _getReminderStatusIcon(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Icons.pause;
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Icons.check_circle; // Finalizado
     
@@ -117,6 +123,9 @@ class _CalendarioScreenState extends State<CalendarioScreen>
   }
 
   String _getReminderStatusText(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
+    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return 'FINALIZADO';
     

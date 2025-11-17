@@ -402,6 +402,8 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
   }
 
   Widget _buildMainMetrics() {
+    final pausedCount = _reminders.where((r) => r.isPaused).length;
+    
     return GridView.count(
       shrinkWrap: true,
       physics: NeverScrollableScrollPhysics(),
@@ -438,6 +440,14 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           Colors.orange,
           'Requieren atención',
         ),
+        if (pausedCount > 0)
+          _buildMetricCard(
+            'Pausados',
+            '$pausedCount',
+            Icons.pause,
+            Colors.grey,
+            'Temporalmente inactivos',
+          ),
       ],
     );
   }
@@ -548,19 +558,50 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
       children: filteredReminders.map((reminder) {
         final nextOccurrence = reminder.getNextOccurrence();
         final isActive = nextOccurrence != null;
+        final isPaused = reminder.isPaused;
         
         return Card(
           margin: EdgeInsets.only(bottom: 12),
           elevation: 2,
+          color: isPaused ? Colors.grey[100] : Colors.white,
           child: ListTile(
             leading: Icon(
               reminder.type == 'medication' ? Icons.medication : Icons.directions_run,
-              color: isActive ? Color(0xFF4A90E2) : Colors.grey,
+              color: isPaused ? Colors.grey : (isActive ? Color(0xFF4A90E2) : Colors.grey),
               size: 32,
             ),
-            title: Text(
-              reminder.title,
-              style: TextStyle(fontWeight: FontWeight.bold),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    reminder.title,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (isPaused)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.pause, color: Colors.white, size: 12),
+                        SizedBox(width: 4),
+                        Text(
+                          'Pausado',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -574,8 +615,8 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
               ],
             ),
             trailing: Icon(
-              isActive ? Icons.schedule : Icons.check_circle,
-              color: isActive ? Colors.orange : Colors.grey,
+              isPaused ? Icons.pause : (isActive ? Icons.schedule : Icons.check_circle),
+              color: isPaused ? Colors.grey : (isActive ? Colors.orange : Colors.grey),
             ),
             onTap: () async {
               await Navigator.push(

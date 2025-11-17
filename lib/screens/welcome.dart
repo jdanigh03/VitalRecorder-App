@@ -941,14 +941,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.white,
+          color: isSelected 
+              ? Colors.blue.withOpacity(0.1) 
+              : reminder.isPaused
+                  ? Colors.grey.withOpacity(0.1)
+                  : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected
                 ? Colors.blue
-                : isPast
-                    ? Colors.red.withOpacity(0.3)
-                    : Colors.orange.withOpacity(0.3),
+                : reminder.isPaused
+                    ? Colors.grey.withOpacity(0.5)
+                    : isPast
+                        ? Colors.red.withOpacity(0.3)
+                        : Colors.orange.withOpacity(0.3),
             width: 2,
           ),
           boxShadow: [
@@ -1073,16 +1079,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                   if (!_isMultiSelectMode) ...[
                     const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed: () => _confirmarRecordatorio(reminder, displayTime),
+                      onPressed: reminder.isPaused 
+                          ? null 
+                          : () => _confirmarRecordatorio(reminder, displayTime),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: reminder.isPaused ? Colors.grey : Colors.green,
                         foregroundColor: Colors.white,
                         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        disabledBackgroundColor: Colors.grey[300],
+                        disabledForegroundColor: Colors.grey[500],
                       ),
-                      child: Icon(Icons.check, size: 20),
+                      child: Icon(reminder.isPaused ? Icons.pause : Icons.check, size: 20),
                     ),
                   ],
                 ],
@@ -1094,16 +1104,33 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isPast ? Colors.red : Colors.orange,
+                  color: reminder.isPaused 
+                      ? Colors.grey 
+                      : isPast 
+                          ? Colors.red 
+                          : Colors.orange,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  isPast ? 'Vencido' : 'Pendiente',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (reminder.isPaused)
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                    if (reminder.isPaused)
+                      SizedBox(width: 4),
+                    Text(
+                      reminder.isPaused 
+                          ? 'Pausado' 
+                          : isPast 
+                              ? 'Vencido' 
+                              : 'Pendiente',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

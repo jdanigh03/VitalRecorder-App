@@ -29,6 +29,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
       filtered = filtered.where((r) => r.type == 'medication').toList();
     } else if (_filterType == 'Actividades') {
       filtered = filtered.where((r) => r.type == 'activity').toList();
+    } else if (_filterType == 'Pausados') {
+      filtered = filtered.where((r) => r.isPaused).toList();
     }
     // Nota: Los filtros de 'Completados' y 'Pendientes' ahora se manejan
     // a nivel de confirmaciones, no a nivel de recordatorio
@@ -126,6 +128,23 @@ class _HistorialScreenState extends State<HistorialScreen> {
                         });
                       },
                     ),
+                    FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.pause, size: 16),
+                          SizedBox(width: 4),
+                          Text('Pausados'),
+                        ],
+                      ),
+                      selected: _filterType == 'Pausados',
+                      selectedColor: Colors.grey[300],
+                      onSelected: (bool selected) {
+                        setState(() {
+                          _filterType = 'Pausados';
+                        });
+                      },
+                    ),
                     // Nota: Filtros de completados/pendientes removidos
                     // ya que ahora se manejan a nivel de confirmaciones
                   ],
@@ -212,12 +231,17 @@ class _HistorialScreenState extends State<HistorialScreen> {
                     final reminder = filteredReminders[index];
                     final nextOccurrence = reminder.getNextOccurrence();
                     final isActive = nextOccurrence != null;
+                    final isPaused = reminder.isPaused;
                     
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 2,
+                      elevation: isPaused ? 1 : 2,
+                      color: isPaused ? Colors.grey[50] : Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
+                        side: isPaused 
+                            ? BorderSide(color: Colors.grey[300]!, width: 1.5)
+                            : BorderSide.none,
                       ),
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(
@@ -228,22 +252,48 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           reminder.type == 'medication'
                               ? Icons.medication
                               : Icons.directions_run,
-                          color: isActive
-                              ? const Color(0xFF4A90E2)
-                              : Colors.grey,
+                          color: isPaused
+                              ? Colors.grey
+                              : (isActive
+                                  ? const Color(0xFF4A90E2)
+                                  : Colors.grey),
                           size: 32,
                         ),
                         title: Text(
                           reminder.title,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isActive ? Colors.black : Colors.grey,
+                            color: isPaused 
+                                ? Colors.grey[700]
+                                : (isActive ? Colors.black : Colors.grey),
                           ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 4),
+                            if (isPaused)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.pause_circle,
+                                      size: 14,
+                                      color: Colors.grey[600],
+                                    ),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Pausado',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             Text(
                               reminder.dateRangeText,
                               style: const TextStyle(color: Colors.grey),
@@ -258,8 +308,12 @@ class _HistorialScreenState extends State<HistorialScreen> {
                           ],
                         ),
                         trailing: Icon(
-                          isActive ? Icons.schedule : Icons.check_circle,
-                          color: isActive ? Colors.orange : Colors.grey,
+                          isPaused 
+                              ? Icons.pause 
+                              : (isActive ? Icons.schedule : Icons.check_circle),
+                          color: isPaused 
+                              ? Colors.grey 
+                              : (isActive ? Colors.orange : Colors.grey),
                         ),
                         onTap: () async {
                           await Navigator.push(
