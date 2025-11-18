@@ -1,25 +1,25 @@
-// ===== ESP32-C3 Super Mini - "Serial BLE" tipo Nordic UART (compat) =====
-// Requiere Arduino-ESP32 (core >= 2.0.x) con NimBLE-Arduino (incluido).
-// Herramientas -> Placa: "ESP32C3 Dev Module" (o equivalente).
+// ===== ESP32-C3 Super Mini - Vital Recorder v2.0 =====
+// Compatible con nuevo sistema de confirmaciones individuales
+// Requiere Arduino-ESP32 (core >= 2.0.x) con NimBLE-Arduino
 
 #include <NimBLEDevice.h>
 #include <U8g2lib.h>
 #include <time.h>
 
 // ---------- Configuración ----------
-#define DEVICE_NAME "Vital Recorder"
+#define DEVICE_NAME "Vital Recorder v2"
 
-// Configuración para ESP32-C3 Super Mini - SIMPLE
-#define LED_PIN 8       // LED onboard ESP32-C3 Super Mini (GPIO 8, lógica invertida)
-#define BUTTON_PIN 2    // Botón externo en GPIO2 (pin seguro sin conflictos)
-#define LED_INVERTED true  // El LED integrado tiene lógica invertida (LOW = encendido)
+// Configuración para ESP32-C3 Super Mini
+#define LED_PIN 8         // LED onboard (GPIO 8, lógica invertida)
+#define VIBRATION_PIN 3   // Motor de vibración (GPIO 3)
+#define BUTTON_PIN 2      // Botón externo en GPIO2
+#define LED_INVERTED true
 
-// Configuración de la pantalla OLED (SSD1306/SSD1315) - OPCIONAL
-// Si no tienes pantalla, comenta estas líneas
+// Configuración de la pantalla OLED (SSD1306/SSD1315)
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* clock (SCL)=*/ 9, /* data (SDA)=*/ 8, /* reset=*/ U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* clock=*/ 9, /* data=*/ 8, /* reset=*/ U8X8_PIN_NONE);
 
 // UUIDs Nordic UART Service (NUS)
 static BLEUUID NUS_SERVICE_UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -29,38 +29,45 @@ static BLEUUID NUS_TX_UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");  // Notify
 // ---------- Globals BLE ----------
 NimBLEServer* pServer = nullptr;
 NimBLEService* pService = nullptr;
-NimBLECharacteristic* pTxChar = nullptr;  // Notifica al celular
-NimBLECharacteristic* pRxChar = nullptr;  // Recibe del celular
+NimBLECharacteristic* pTxChar = nullptr;
+NimBLECharacteristic* pRxChar = nullptr;
 NimBLEAdvertising* pAdvertising = nullptr;
 
 volatile bool deviceConnected = false;
 volatile bool showSyncConfirmation = false;
-volatile bool showClearConfirmation = false;
 volatile bool justConnected = false;
 volatile bool justDisconnected = false;
 
 // Control de alertas y recordatorios activos
 uint32_t alertUntil = 0;
-int activeReminderId = -1;     // Índice del recordatorio activo (-1 = ninguno)
-bool reminderActive = false;   // Si hay un recordatorio activo persistente
-uint32_t ledBlinkTime = 0;     // Para hacer parpadear el LED
-bool ledState = false;         // Estado actual del LED
+int activeReminderId = -1;
+bool reminderActive = false;
+uint32_t ledBlinkTime = 0;
+bool ledState = false;
+bool vibrationState = false;
 
-// ---------- Lógica de Recordatorios ----------
-const int MAX_REMINDERS = 10;
+// Control de heartbeat para mantener conexión activa
+uint32_t lastHeartbeatTime = 0;
+const uint32_t HEARTBEAT_INTERVAL = 30000; // 30 segundos
+
+// ---------- Lógica de Recordatorios v2 ----------
+// Ahora cada recordatorio representa una OCURRENCIA específica
+const int MAX_REMINDERS = 20;  // Aumentado para manejar más ocurrencias
 struct Reminder {
   uint8_t hour;
   uint8_t minute;
-  char title[20];    // Título corto para la pantalla
-  char id[10];       // ID único del recordatorio (para sincronización con app)
-  bool triggered;    // Si ya fue activado hoy
+  char title[30];        // Título más largo
+  char reminderId[36];   // UUID del recordatorio (para sync con Firestore)
+  char occurrenceId[50]; // ID único de la ocurrencia (formato: reminderId_scheduledTime)
+  bool confirmed;        // Si fue confirmado desde la manilla
+  bool synced;          // Si ya fue sincronizado con la app
+  uint32_t scheduledTime; // Timestamp de la hora programada
 };
 
 Reminder reminders[MAX_REMINDERS];
 int reminderCount = 0;
 
 // Tiempo Unix (segundos desde 1970-01-01)
-// Se sincroniza desde el celular
 time_t deviceClock = 0;
 
 // Variables para el manejo del botón
@@ -86,26 +93,28 @@ void displayMessage(const char* line1, const char* line2 = "") {
 // Utilidad: enviar una línea al cliente BLE
 void bleSendLine(const String& s) {
   if (!deviceConnected || pTxChar == nullptr) {
-    Serial.printf("[BLE] No se puede enviar: %s (Connected=%s, TxChar=%s)\n", 
-                  s.c_str(), 
-                  deviceConnected ? "SI" : "NO", 
-                  pTxChar ? "OK" : "NULL");
+    Serial.printf("[BLE] No conectado: %s\n", s.c_str());
     return;
   }
   
   Serial.printf("[BLE] Enviando: %s\n", s.c_str());
   pTxChar->setValue((uint8_t*)s.c_str(), s.length());
   pTxChar->notify();
-  Serial.println("[BLE] Mensaje enviado OK");
 }
 
-// Función helper para controlar LED con lógica invertida
+// Función helper para controlar LED
 void setLED(bool state) {
   if (LED_INVERTED) {
-    digitalWrite(LED_PIN, state ? LOW : HIGH);  // Lógica invertida: LOW = encendido
+    digitalWrite(LED_PIN, state ? LOW : HIGH);
   } else {
-    digitalWrite(LED_PIN, state ? HIGH : LOW);  // Lógica normal: HIGH = encendido
+    digitalWrite(LED_PIN, state ? HIGH : LOW);
   }
+}
+
+// Función helper para controlar motor de vibración
+void setVibration(bool state) {
+  digitalWrite(VIBRATION_PIN, state ? HIGH : LOW);
+  vibrationState = state;
 }
 
 void setupButton() {
@@ -120,109 +129,127 @@ void onButtonPressed() {
   bleSendLine("OK BUTTON_PRESSED\r\n");
   
   if (reminderActive && activeReminderId >= 0) {
-    Serial.printf("[BUTTON] Completando recordatorio ID %d\n", activeReminderId);
+    Serial.printf("[BUTTON] Confirmando recordatorio ID %d\n", activeReminderId);
     
-    String remTitle = "";
-    if (activeReminderId < reminderCount) {
-      remTitle = String(reminders[activeReminderId].title);
-    }
-    
-    // IMPORTANTE: Enviar el mensaje ANTES de completar para que el ID sea correcto
-    bleSendLine("OK REMINDER_COMPLETED_BY_BUTTON " + String(activeReminderId) + " \"" + remTitle + "\"\r\n");
-    
-    // Ahora completar el recordatorio
-    completeReminder(activeReminderId);
+    // Confirmar el recordatorio
+    confirmReminder(activeReminderId);
   } else {
     Serial.println("[BUTTON] No hay recordatorio activo");
     bleSendLine("INFO NO_REMINDER\r\n");
   }
 }
 
-// Completar recordatorio activo
-void completeReminder(int remIndex) {
-  if (remIndex == activeReminderId) {
-    Serial.printf("[REM] Completando recordatorio ID %d\n", remIndex);
+// Confirmar recordatorio activo desde la manilla
+void confirmReminder(int remIndex) {
+  if (remIndex == activeReminderId && remIndex >= 0 && remIndex < reminderCount) {
+    Serial.printf("[REM] Confirmando recordatorio ID %d\n", remIndex);
     
-    // Apagar LED y limpiar estado
+    // Marcar como confirmado
+    reminders[remIndex].confirmed = true;
+    reminders[remIndex].synced = false; // Pendiente de sincronizar con app
+    
+    // Apagar LED, vibración y limpiar estado
     setLED(false);
+    setVibration(false);
     reminderActive = false;
     activeReminderId = -1;
-    alertUntil = 0; // Limpiar timeout
+    alertUntil = 0;
     
-    // Marcar como activado para evitar repetición
-    if (remIndex >= 0 && remIndex < reminderCount) {
-      reminders[remIndex].triggered = true;
-    }
+    // Notificar a la app con detalles completos de la confirmación
+    String msg = "OK REMINDER_CONFIRMED ";
+    msg += String(remIndex) + " ";
+    msg += "\"" + String(reminders[remIndex].reminderId) + "\" ";
+    msg += "\"" + String(reminders[remIndex].occurrenceId) + "\" ";
+    msg += String(reminders[remIndex].scheduledTime) + " ";
+    msg += "\"" + String(reminders[remIndex].title) + "\"";
+    bleSendLine(msg + "\r\n");
     
-    displayMessage("Completado!", "");
+    displayMessage("Confirmado!", "");
     delay(2000);
-    Serial.println("[REM] Recordatorio completado y estado limpiado");
+    Serial.println("[REM] Confirmación registrada");
   }
 }
 
 // Activar recordatorio
 void activateReminder(int remIndex) {
-  if (remIndex >= 0 && remIndex < reminderCount && !reminders[remIndex].triggered) {
+  if (remIndex >= 0 && remIndex < reminderCount && !reminders[remIndex].confirmed) {
     activeReminderId = remIndex;
     reminderActive = true;
-    reminders[remIndex].triggered = true;
     
     displayMessage("Recordatorio:", reminders[remIndex].title);
     setLED(true);
+    setVibration(true);
     ledBlinkTime = millis();
     
-    // Configurar timeout de 5 minutos (300,000 ms) para auto-completar si no se confirma
-    alertUntil = millis() + 300000; // 5 minutos
+    // Timeout de 5 minutos para auto-marcar como omitido
+    alertUntil = millis() + 300000;
     
-    Serial.print("[REM] Activando recordatorio: ");
+    Serial.print("[REM] Activando: ");
     Serial.println(reminders[remIndex].title);
-    Serial.println("[REM] Recordatorio activo por 5 minutos");
     
-    // Notificar a la app que se activó un recordatorio con detalles
-    bleSendLine("OK REMINDER_ACTIVATED " + String(remIndex) + " \"" + String(reminders[remIndex].title) + "\" " + String(reminders[remIndex].hour) + ":" + String(reminders[remIndex].minute) + "\r\n");
+    // Notificar a la app que se activó un recordatorio
+    String msg = "OK REMINDER_ACTIVATED ";
+    msg += String(remIndex) + " ";
+    msg += "\"" + String(reminders[remIndex].title) + "\" ";
+    msg += String(reminders[remIndex].hour) + ":" + String(reminders[remIndex].minute);
+    bleSendLine(msg + "\r\n");
   }
 }
 
-
-// ---------- Callbacks de conexión (sin 'override' para compatibilidad) ----------
+// ---------- Callbacks de conexión ----------
 class ServerCallbacks : public NimBLEServerCallbacks {
 public:
   void onConnect(NimBLEServer* s) {
     deviceConnected = true;
     justConnected = true;
-    Serial.println("[BLE] *** CONEXION ESTABLECIDA ***");
-    bleSendLine("OK CONNECTED\r\n");
+    lastHeartbeatTime = millis(); // Reset heartbeat al conectar
+    Serial.println("[BLE] ✅ *** CONEXIÓN ESTABLECIDA ***");
+    bleSendLine("OK CONNECTED v2.0\r\n");
     
-    // Enviar recordatorios completados automáticamente al reconectar
-    delay(1000); // Dar tiempo para que se establezca la conexión
-    String completed = "COMPLETED_LIST ";
-    for (int i = 0; i < reminderCount; i++) {
-      if (reminders[i].triggered) {
-        completed += String(i) + ",";
-      }
-    }
-    if (completed != "COMPLETED_LIST ") {
-      bleSendLine(completed + "\r\n");
-      Serial.println("[BLE] Enviando recordatorios completados al reconectar");
-    }
+    // Enviar confirmaciones pendientes de sincronizar
+    delay(1000);
+    syncPendingConfirmations();
   }
 
-  void onConnect(NimBLEServer* s, ble_gap_conn_desc* /*desc*/) {
+  void onConnect(NimBLEServer* s, ble_gap_conn_desc*) {
     deviceConnected = true;
     justConnected = true;
-    Serial.println("[BLE] Conectado (+desc)");
+    Serial.println("[BLE] Conectado");
     bleSendLine("OK CONNECTED\r\n");
   }
 
   void onDisconnect(NimBLEServer* s) {
     deviceConnected = false;
     justDisconnected = true;
-    Serial.println("[BLE] Desconectado, reanudando advertising...");
+    Serial.println("[BLE] 🔴 Desconectado, reanudando advertising...");
     NimBLEDevice::startAdvertising();
+    lastHeartbeatTime = 0; // Reset heartbeat
+  }
+
+private:
+  void syncPendingConfirmations() {
+    int pendingCount = 0;
+    for (int i = 0; i < reminderCount; i++) {
+      if (reminders[i].confirmed && !reminders[i].synced) {
+        // Enviar confirmación pendiente
+        String msg = "PENDING_CONFIRMATION ";
+        msg += "\"" + String(reminders[i].reminderId) + "\" ";
+        msg += "\"" + String(reminders[i].occurrenceId) + "\" ";
+        msg += String(reminders[i].scheduledTime);
+        bleSendLine(msg + "\r\n");
+        
+        reminders[i].synced = true;
+        pendingCount++;
+        delay(100); // Pequeña pausa entre mensajes
+      }
+    }
+    if (pendingCount > 0) {
+      Serial.printf("[BLE] %d confirmaciones sincronizadas\n", pendingCount);
+    }
   }
 };
 
-// ---------- Callback para RX (escrituras desde el teléfono) ----------
+// ---------- Callback para RX ----------
 class RxCallbacks : public NimBLECharacteristicCallbacks {
 public:
   void onWrite(NimBLECharacteristic* ch) {
@@ -231,7 +258,7 @@ public:
     handleCommand(String(rx.c_str()));
   }
 
-  void onWrite(NimBLECharacteristic* ch, NimBLEConnInfo& /*connInfo*/) {
+  void onWrite(NimBLECharacteristic* ch, NimBLEConnInfo&) {
     std::string rx = ch->getValue();
     if (rx.empty()) return;
     handleCommand(String(rx.c_str()));
@@ -243,7 +270,6 @@ private:
     Serial.print("[BLE RX] ");
     Serial.println(cmd);
     
-    // Si recibimos un comando, significa que estamos conectados
     if (!deviceConnected) {
       deviceConnected = true;
       Serial.println("[BLE] Conexión detectada via RX");
@@ -254,8 +280,7 @@ private:
 
     if (up.startsWith("PIN ")) {
       int pin = -1, val = -1;
-      int matches = sscanf(cmd.c_str(), "PIN %d %d", &pin, &val);
-      if (matches == 2 && pin >= 0 && (val == 0 || val == 1)) {
+      if (sscanf(cmd.c_str(), "PIN %d %d", &pin, &val) == 2 && pin >= 0) {
         pinMode(pin, OUTPUT);
         digitalWrite(pin, val ? HIGH : LOW);
         bleSendLine("OK PIN " + String(pin) + " = " + String(val) + "\r\n");
@@ -264,8 +289,7 @@ private:
       }
     } else if (up.startsWith("READ ")) {
       int pin = -1;
-      int matches = sscanf(cmd.c_str(), "READ %d", &pin);
-      if (matches == 1 && pin >= 0) {
+      if (sscanf(cmd.c_str(), "READ %d", &pin) == 1 && pin >= 0) {
         pinMode(pin, INPUT_PULLUP);
         int v = digitalRead(pin);
         bleSendLine("OK READ " + String(pin) + " = " + String(v) + "\r\n");
@@ -274,69 +298,80 @@ private:
       }
     } else if (up.startsWith("SYNC_TIME ")) {
       // SYNC_TIME <timestamp_local>
-      // El timestamp ya viene en hora local desde el celular
       time_t timestamp = 0;
-      
-      int matches = sscanf(cmd.substring(10).c_str(), "%ld", &timestamp);
-
-      if (matches == 1 && timestamp > 0) {
+      if (sscanf(cmd.substring(10).c_str(), "%ld", &timestamp) == 1 && timestamp > 0) {
         deviceClock = timestamp;
-        // No configurar zona horaria, usar el timestamp local directamente
-        bleSendLine("OK TIME_SYNCED");
+        bleSendLine("OK TIME_SYNCED\r\n");
+        Serial.printf("[TIME] Sincronizado: %ld\n", timestamp);
       } else {
-        bleSendLine("ERR INVALID_TIMESTAMP");
+        bleSendLine("ERR INVALID_TIMESTAMP\r\n");
       }
     } else if (up == "REM_CLEAR") {
       reminderCount = 0;
-      bleSendLine("OK REM_CLEARED");
-      showClearConfirmation = true;
+      bleSendLine("OK REM_CLEARED\r\n");
+      Serial.println("[REM] Recordatorios borrados");
     } else if (up.startsWith("REM_ADD ")) {
+      // REM_ADD HH:MM "Title" "ReminderId" "OccurrenceId" <ScheduledTimestamp>
       if (reminderCount >= MAX_REMINDERS) {
-        bleSendLine("ERR REM_FULL");
+        bleSendLine("ERR REM_FULL\r\n");
         return;
       }
-      String cmd_part = cmd.substring(8);
-      cmd_part.trim();
-      int first_space = cmd_part.indexOf(' ');
-      if (first_space > 0) {
-        String time_str = cmd_part.substring(0, first_space);
-        String title_str = cmd_part.substring(first_space + 1);
-        uint8_t h = 0, m = 0;
-        if (sscanf(time_str.c_str(), "%hhu:%hhu", &h, &m) == 2) {
-          title_str.replace("\"", "");
-          reminders[reminderCount].hour = h;
-          reminders[reminderCount].minute = m;
-          strncpy(reminders[reminderCount].title, title_str.c_str(), 19);
-          reminders[reminderCount].title[19] = '\0';
+      
+      // Parsear comando más complejo
+      int hour, minute;
+      char title[30], remId[36], occId[50];
+      uint32_t schedTime;
+      
+      // Formato simplificado: REM_ADD HH:MM "Title"
+      int firstQuote = cmd.indexOf('"');
+      int secondQuote = cmd.indexOf('"', firstQuote + 1);
+      
+      if (firstQuote > 0 && secondQuote > firstQuote) {
+        String timeStr = cmd.substring(8, firstQuote);
+        timeStr.trim();
+        String titleStr = cmd.substring(firstQuote + 1, secondQuote);
+        
+        if (sscanf(timeStr.c_str(), "%d:%d", &hour, &minute) == 2) {
+          reminders[reminderCount].hour = hour;
+          reminders[reminderCount].minute = minute;
+          strncpy(reminders[reminderCount].title, titleStr.c_str(), 29);
+          reminders[reminderCount].title[29] = '\0';
+          reminders[reminderCount].confirmed = false;
+          reminders[reminderCount].synced = true;
+          reminders[reminderCount].scheduledTime = deviceClock;
+          
+          // Generar IDs temporales si no se proporcionan
+          snprintf(reminders[reminderCount].reminderId, 36, "REM_%d", reminderCount);
+          snprintf(reminders[reminderCount].occurrenceId, 50, "OCC_%d_%d", reminderCount, hour * 60 + minute);
+          
           reminderCount++;
-          bleSendLine("OK REM_ADDED");
+          bleSendLine("OK REM_ADDED\r\n");
           showSyncConfirmation = true;
+          Serial.printf("[REM] Añadido: %02d:%02d %s\n", hour, minute, titleStr.c_str());
           return;
         }
       }
-      bleSendLine("ERR REM_FORMAT");
-    } else if (up.startsWith("REM_COMPLETE ")) {
-      // REM_COMPLETE <reminder_index>
+      bleSendLine("ERR REM_FORMAT\r\n");
+    } else if (up.startsWith("REM_CONFIRM ")) {
+      // REM_CONFIRM <index>
       int remIndex = -1;
-      int matches = sscanf(cmd.substring(13).c_str(), "%d", &remIndex);
-      if (matches == 1 && remIndex >= 0 && remIndex < reminderCount) {
-        completeReminder(remIndex);
-        bleSendLine("OK REM_COMPLETED");
+      if (sscanf(cmd.substring(12).c_str(), "%d", &remIndex) == 1 && remIndex >= 0 && remIndex < reminderCount) {
+        confirmReminder(remIndex);
+        bleSendLine("OK REM_CONFIRMED\r\n");
       } else {
-        bleSendLine("ERR INVALID_REM_INDEX");
+        bleSendLine("ERR INVALID_REM_INDEX\r\n");
       }
     } else if (up == "SIMULATE_ALERT") {
-      // Crear un recordatorio de prueba activo
+      // Simular alerta para pruebas
       activeReminderId = 0;
       reminderActive = true;
       
-      // Crear recordatorio temporal si no hay ninguno
       if (reminderCount == 0) {
-        strncpy(reminders[0].title, "Test Alert", 19);
-        reminders[0].title[19] = '\0';
+        strncpy(reminders[0].title, "Test Alert", 29);
+        reminders[0].title[29] = '\0';
         reminders[0].hour = 12;
         reminders[0].minute = 0;
-        reminders[0].triggered = true;
+        reminders[0].confirmed = false;
         reminderCount = 1;
       }
       
@@ -344,21 +379,36 @@ private:
       setLED(true);
       ledBlinkTime = millis();
       
-      Serial.println("[SIMULATE] Recordatorio activo creado para prueba");
-      bleSendLine("OK SIMULATING_ALERT");
-    } else if (up == "GET_COMPLETED") {
-      // Enviar lista de recordatorios completados desde la última sincronización
-      String completed = "COMPLETED_LIST ";
+      Serial.println("[SIMULATE] Alert activo");
+      bleSendLine("OK SIMULATING_ALERT\r\n");
+    } else if (up == "GET_PENDING") {
+      // Obtener confirmaciones pendientes de sincronizar
+      int pending = 0;
       for (int i = 0; i < reminderCount; i++) {
-        if (reminders[i].triggered) {
-          completed += String(i) + ",";
+        if (reminders[i].confirmed && !reminders[i].synced) {
+          pending++;
         }
       }
-      bleSendLine(completed + "\r\n");
+      bleSendLine("PENDING_COUNT " + String(pending) + "\r\n");
     } else if (up == "STATUS") {
-      bleSendLine("STATUS OK\r\n");
+      // Respuesta inmediata al comando STATUS para verificación de conexión
+      String response = "OK STATUS v2.0";
+      if (deviceClock > 0) {
+        struct tm* timeinfo = gmtime(&deviceClock);
+        char timeStr[20];
+        sprintf(timeStr, " %02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+        response += String(timeStr);
+      }
+      response += " REM:" + String(reminderCount);
+      response += " CONN:" + String(deviceConnected ? "YES" : "NO");
+      bleSendLine(response + "\r\n");
+      Serial.println("[STATUS] Respuesta enviada");
+    } else if (up == "PING") {
+      // Comando simple para verificación rápida de conexión
+      bleSendLine("PONG\r\n");
+      Serial.println("[PING] Pong enviado");
     } else if (up == "HELP") {
-      bleSendLine("CMDS:\r\n  PIN <gpio> <0|1>\r\n  READ <gpio>\r\n  SYNC_TIME <local_timestamp>\r\n  REM_CLEAR\r\n  REM_ADD HH:MM Title\r\n  REM_COMPLETE <index>\r\n  GET_COMPLETED\r\n  SIMULATE_ALERT\r\n  STATUS\r\n");
+      bleSendLine("CMDS v2:\r\n  PIN <gpio> <0|1>\r\n  READ <gpio>\r\n  SYNC_TIME <ts>\r\n  REM_CLEAR\r\n  REM_ADD HH:MM \"Title\"\r\n  REM_CONFIRM <idx>\r\n  GET_PENDING\r\n  STATUS\r\n  PING\r\n");
     } else {
       bleSendLine("ECHO: " + cmd + "\r\n");
     }
@@ -374,21 +424,24 @@ void startAdvertising() {
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
-  setLED(false);  // Apagar LED al inicio
+  pinMode(VIBRATION_PIN, OUTPUT);
+  setLED(false);
+  setVibration(false);
   
   Serial.begin(115200);
-  delay(500);  // Dar tiempo para que se abra el monitor serial
+  delay(500);
   
-  // Configurar botón
   setupButton();
   
   Serial.println();
-  Serial.println("=== ESP32-C3 BLE UART (compat) ===");
-  Serial.printf("LED configurado en GPIO%d (%s)\n", LED_PIN, LED_INVERTED ? "lógica invertida" : "lógica normal");
+  Serial.println("=== Vital Recorder v2.0 ===");
+  Serial.printf("LED: GPIO%d (%s)\n", LED_PIN, LED_INVERTED ? "invertido" : "normal");
+  Serial.printf("Vibración: GPIO%d\n", VIBRATION_PIN);
 
   u8g2.begin();
-  displayMessage("Iniciando...", "VitalRecorder");
+  displayMessage("Iniciando...", "v2.0");
   delay(1500);
+  
   NimBLEDevice::init(DEVICE_NAME);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
   pServer = NimBLEDevice::createServer();
@@ -400,10 +453,10 @@ void setup() {
   pService->start();
   pAdvertising = NimBLEDevice::getAdvertising();
   startAdvertising();
+  
   displayMessage("Esperando...", "(BLE)");
   Serial.println("[BLE] Dispositivo: " + String(DEVICE_NAME));
-  Serial.println("[BLE] Servicio NUS listo");
-  bleSendLine("READY\r\n");
+  Serial.println("[BLE] Listo");
 }
 
 void loop() {
@@ -411,51 +464,76 @@ void loop() {
   static uint32_t lastDisplayUpdate = 0;
   static uint32_t lastDayReset = 0;
   uint32_t now = millis();
+  
+  // Heartbeat automático cada 30 segundos cuando está conectado
+  if (deviceConnected && (now - lastHeartbeatTime > HEARTBEAT_INTERVAL)) {
+    lastHeartbeatTime = now;
+    // Enviar heartbeat silencioso (no se muestra en logs normales)
+    if (pTxChar != nullptr) {
+      String heartbeat = "HEARTBEAT ";
+      if (deviceClock > 0) {
+        struct tm* timeinfo = gmtime(&deviceClock);
+        char timeStr[10];
+        sprintf(timeStr, "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+        heartbeat += String(timeStr);
+      }
+      pTxChar->setValue((uint8_t*)heartbeat.c_str(), heartbeat.length());
+      pTxChar->notify();
+      Serial.println("[HEARTBEAT] Enviado");
+    }
+  }
 
-  // Enviar estado cada 2 segundos
-  if (millis() - lastStatusTime > 2000) {
+  // Estado cada 5 segundos (reducido para menos spam en logs)
+  if (millis() - lastStatusTime > 5000) {
     bool currentState = digitalRead(BUTTON_PIN);
-    Serial.printf("[STATUS] GPIO%d = %s | BLE: %s | REM: %s\n", 
-                  BUTTON_PIN, currentState ? "LIBERADO" : "PRESIONADO",
-                  deviceConnected ? "CONECTADO" : "DESCONECTADO",
-                  reminderActive ? "ACTIVO" : "INACTIVO");
+    Serial.printf("[STATUS] BTN=%s | BLE=%s | REM=%s | CLOCK=%s\n", 
+                  currentState ? "UP" : "DOWN",
+                  deviceConnected ? "ON" : "OFF",
+                  reminderActive ? "ACTIVE" : "IDLE",
+                  deviceClock > 0 ? "SYNC" : "NOSYNC");
     lastStatusTime = millis();
     
-    // Verificar si realmente hay conexión
+    // Detectar pérdida de conexión
     if (deviceConnected && pServer && pServer->getConnectedCount() == 0) {
-      Serial.println("[BLE] Conexión perdida detectada");
+      Serial.println("[BLE] ⚠️ Conexión perdida detectada");
       deviceConnected = false;
+      justDisconnected = true;
+      // Reiniciar advertising para permitir reconexiones
+      NimBLEDevice::startAdvertising();
+      Serial.println("[BLE] Advertising reiniciado para reconexionar");
+      displayMessage("Desconectado", "Reconectando...");
     }
   }
   
-  // Detectar cambios de estado del botón
+  // Detectar botón
   bool currentState = digitalRead(BUTTON_PIN);
   if (currentState != lastButtonState && (millis() - lastButtonChangeTime > 50)) {
     lastButtonState = currentState;
     lastButtonChangeTime = millis();
     
     if (currentState == LOW) {
-      // Botón presionado (con pull-up, LOW = presionado)
-      Serial.println("[BUTTON] *** PRESIONADO ***");
+      Serial.println("[BUTTON] *** PRESS ***");
       onButtonPressed();
-    } else {
-      // Botón liberado
-      Serial.println("[BUTTON] *** LIBERADO ***");
     }
   }
 
-  // --- Manejo de estado de conexión (no bloqueante) ---
+  // Manejo de conexión
   if (justConnected) {
     justConnected = false;
-    displayMessage("Conectado a:", "VitalRecorder");
-    lastDisplayUpdate = 0; // Forzar actualización de hora
+    displayMessage("Conectado", "");
+    lastDisplayUpdate = 0;
   }
   if (justDisconnected) {
     justDisconnected = false;
-    displayMessage("Desconectado", "Esperando...");
+    displayMessage("Desconectado", "Reconectando...");
+    delay(1000);
+    // Asegurarse de que el advertising está activo
+    if (!deviceConnected) {
+      displayMessage("Esperando...", "(BLE)");
+    }
   }
 
-  // Incrementar el reloj interno cada segundo
+  // Incrementar reloj
   if (now - lastSecond >= 1000) {
     lastSecond += 1000;
     if (deviceClock > 0) {
@@ -463,78 +541,65 @@ void loop() {
     }
   }
 
-  // Resetear flags de recordatorios activados cada día (a medianoche)
+  // Reset diario de confirmaciones (medianoche)
   if (deviceClock > 0) {
     struct tm* timeinfo = gmtime(&deviceClock);
     if (timeinfo->tm_hour == 0 && timeinfo->tm_min == 0 && timeinfo->tm_sec < 5) {
-      if (now - lastDayReset > 10000) { // Evitar reset múltiple
+      if (now - lastDayReset > 10000) {
         for (int i = 0; i < reminderCount; i++) {
-          reminders[i].triggered = false;
+          reminders[i].confirmed = false;
         }
         lastDayReset = now;
-        Serial.println("[REM] Recordatorios reseteados para el nuevo día");
+        Serial.println("[REM] Reset diario");
       }
     }
   }
 
-  // --- Recordatorio persistente activo (prioridad máxima) ---
+  // Recordatorio activo (prioridad)
   if (reminderActive && activeReminderId >= 0) {
-    // Verificar si el timeout de 5 minutos ha expirado
+    // Timeout de 5 minutos
     if (now >= alertUntil) {
-      Serial.println("[REM] Timeout de 5 minutos alcanzado - auto-completando recordatorio");
-      bleSendLine("INFO REMINDER_TIMEOUT " + String(activeReminderId) + "\r\n");
+      Serial.println("[REM] Timeout - marcando como omitido");
       
-      // Auto-completar recordatorio
-      completeReminder(activeReminderId);
+      String msg = "INFO REMINDER_MISSED ";
+      msg += String(activeReminderId) + " ";
+      msg += "\"" + String(reminders[activeReminderId].reminderId) + "\"";
+      bleSendLine(msg + "\r\n");
+      
+      // Limpiar estado sin confirmar
+      setLED(false);
+      setVibration(false);
+      reminderActive = false;
+      activeReminderId = -1;
+      alertUntil = 0;
       return;
     }
     
-    // Hacer parpadear el LED cada 500ms
+    // Parpadear LED y vibración sincronizados
     if (now - ledBlinkTime > 500) {
       ledState = !ledState;
       setLED(ledState);
+      setVibration(ledState);
       ledBlinkTime = now;
     }
     
-    // Mostrar tiempo restante cada 30 segundos
-    static uint32_t lastTimeoutCheck = 0;
-    if (now - lastTimeoutCheck > 30000) {
-      uint32_t timeLeft = (alertUntil - now) / 1000; // segundos restantes
-      Serial.printf("[REM] Tiempo restante: %d segundos\n", timeLeft);
-      lastTimeoutCheck = now;
-    }
-    
-    // Mantener el mensaje en pantalla - no actualizar nada más
     delay(10);
     return;
   }
 
-  // --- Alertas temporales (confirmaciones) - SOLO si no hay recordatorio activo ---
+  // Alertas temporales
   if (!reminderActive) {
-    if (showClearConfirmation) {
-      showClearConfirmation = false;
-      displayMessage("Recordatorios", "Borrados");
-      alertUntil = now + 2000;
-      // Resetear todas las flags de recordatorios
-      for (int i = 0; i < reminderCount; i++) {
-        reminders[i].triggered = false;
-      }
-      return;
-    }
-
     if (showSyncConfirmation) {
       showSyncConfirmation = false;
-      displayMessage("Recordatorio", "Sincronizado");
-      alertUntil = now + 2000; // Reducido a 2s
+      displayMessage("Sincronizado", "");
+      alertUntil = now + 2000;
       return;
     }
 
-    // Si hay una alerta temporal activa, no hacer más nada hasta que termine
     if (now < alertUntil) {
       return;
     }
     
-    // Si la alerta temporal acaba de terminar, limpiar y forzar refresco
     if (alertUntil > 0) {
       setLED(false);
       alertUntil = 0;
@@ -542,23 +607,22 @@ void loop() {
     }
   }
 
-  // --- Chequear recordatorios nuevos (solo si el reloj está sincronizado) ---
+  // Chequear recordatorios
   if (deviceClock > 0) {
     struct tm* timeinfo = gmtime(&deviceClock);
     for (int i = 0; i < reminderCount; i++) {
-      // Verificar si es hora del recordatorio y no ha sido activado
       if (timeinfo->tm_hour == reminders[i].hour && 
           timeinfo->tm_min == reminders[i].minute && 
           timeinfo->tm_sec < 5 && 
-          !reminders[i].triggered) {
+          !reminders[i].confirmed) {
         
         activateReminder(i);
-        return; // Activar solo uno a la vez
+        return;
       }
     }
   }
 
-  // --- Pantalla por defecto: Mostrar la hora ---
+  // Pantalla por defecto
   if (now - lastDisplayUpdate > 15000 || lastDisplayUpdate == 0) {
     lastDisplayUpdate = now;
     if (deviceClock > 0) {
@@ -568,9 +632,9 @@ void loop() {
       displayMessage("VitalRecorder", timeStr);
     } else {
       if (deviceConnected) {
-        displayMessage("Conectado", "Sincronize hora");
+        displayMessage("Conectado", "Sync...");
       } else {
-        displayMessage("VitalRecorder", "Sincronizar...");
+        displayMessage("VitalRecorder", "v2.0");
       }
     }
   }

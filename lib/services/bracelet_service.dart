@@ -11,6 +11,7 @@ import '../models/reminder_new.dart';
 import '../reminder_service_new.dart';
 import 'background_ble_service_simple.dart';
 import 'bracelet_storage_service.dart';
+import 'notification_service.dart';
 
 class BraceletService extends ChangeNotifier {
   static final BraceletService _instance = BraceletService._internal();
@@ -18,6 +19,8 @@ class BraceletService extends ChangeNotifier {
   BraceletService._internal() {
     // Iniciar escucha global inmediatamente
     _startGlobalBleListener();
+    // Iniciar verificación de conexión
+    _startConnectionMonitoring();
   }
 
   // Estado del servicio
@@ -40,6 +43,13 @@ class BraceletService extends ChangeNotifier {
   Timer? _reconnectionTimer;
   bool _isAttemptingReconnection = false;
   BraceletDevice? _savedBracelet;
+  
+  // Sistema de verificación de conexión
+  Timer? _connectionCheckTimer;
+  bool _isCheckingConnection = false;
+  DateTime? _lastSuccessfulResponse;
+  static const Duration _connectionCheckInterval = Duration(minutes: 1);
+  static const Duration _responseTimeout = Duration(seconds: 10);
   
   // Estado de recordatorios activos en la manilla
   int? _activeReminderIndex;
@@ -405,6 +415,9 @@ class BraceletService extends ChangeNotifier {
     try {
       final response = utf8.decode(data).trim();
       print("[GLOBAL BLE] ✅ Respuesta recibida: $response");
+      
+      // Actualizar timestamp de última respuesta exitosa
+      _lastSuccessfulResponse = DateTime.now();
 
       // Crear objeto de respuesta
       final braceletResponse = BraceletResponse.fromRawResponse("", response);
@@ -606,8 +619,8 @@ class BraceletService extends ChangeNotifier {
     }
   }
 
-  /// Enviar comando a la manilla
-  Future<void> sendCommand(String command) async {
+  /// Enviar comando a la manilla con detección de timeout
+  Future<void> sendCommand(String command, {Duration? timeout}) async {
     if (!isConnected || _rxCharacteristic == null) {
       throw Exception("No hay conexión activa con la manilla");
     }
@@ -619,6 +632,48 @@ class BraceletService extends ChangeNotifier {
     } catch (e) {
       print("Error enviando comando: $e");
       throw e;
+    }
+  }
+  
+  /// Enviar comando con espera de respuesta y timeout
+  Future<bool> sendCommandWithResponse(String command, {Duration? timeout}) async {
+    if (!isConnected || _rxCharacteristic == null) {
+      return false;
+    }
+
+    try {
+      final responseTimeout = timeout ?? _responseTimeout;
+      bool responseReceived = false;
+      
+      // Suscribirse temporalmente a las respuestas
+      final subscription = _responseController.stream.listen((response) {
+        responseReceived = true;
+      });
+      
+      // Enviar comando
+      final data = utf8.encode(command + '\r\n');
+      await _rxCharacteristic!.write(data);
+      print("[CONNECTION_CHECK] Comando enviado: $command");
+      
+      // Esperar respuesta o timeout
+      final startTime = DateTime.now();
+      while (!responseReceived && DateTime.now().difference(startTime) < responseTimeout) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      
+      subscription.cancel();
+      
+      if (responseReceived) {
+        _lastSuccessfulResponse = DateTime.now();
+        print("[CONNECTION_CHECK] ✅ Respuesta recibida");
+      } else {
+        print("[CONNECTION_CHECK] ⚠️ Timeout - No se recibió respuesta");
+      }
+      
+      return responseReceived;
+    } catch (e) {
+      print("[CONNECTION_CHECK] ❌ Error enviando comando: $e");
+      return false;
     }
   }
 
@@ -935,9 +990,76 @@ class BraceletService extends ChangeNotifier {
     print('[RECONNECT] ⏹️ Sistema de reconexión detenido');
   }
 
+  /// Iniciar monitoreo de conexión cada minuto
+  void _startConnectionMonitoring() {
+    _connectionCheckTimer = Timer.periodic(_connectionCheckInterval, (timer) async {
+      await _checkConnectionHealth();
+    });
+    print('[CONNECTION_CHECK] 🔍 Sistema de monitoreo de conexión iniciado (cada 1 minuto)');
+  }
+  
+  /// Verificar salud de la conexión
+  Future<void> _checkConnectionHealth() async {
+    // Solo verificar si hay una conexión activa
+    if (!isConnected || _isCheckingConnection) {
+      return;
+    }
+    
+    _isCheckingConnection = true;
+    
+    try {
+      print('[CONNECTION_CHECK] 🔍 Verificando conexión con la manilla...');
+      
+      // Enviar comando STATUS y esperar respuesta
+      final responseReceived = await sendCommandWithResponse(BraceletCommand.status);
+      
+      if (!responseReceived) {
+        // No se recibió respuesta - marcar como desconectada
+        print('[CONNECTION_CHECK] ⚠️ Manilla no responde - marcando como desconectada');
+        await _handleConnectionLost();
+      } else {
+        print('[CONNECTION_CHECK] ✅ Conexión saludable');
+      }
+    } catch (e) {
+      print('[CONNECTION_CHECK] ❌ Error verificando conexión: $e');
+    } finally {
+      _isCheckingConnection = false;
+    }
+  }
+  
+  /// Manejar pérdida de conexión detectada
+  Future<void> _handleConnectionLost() async {
+    if (_connectedDevice == null) return;
+    
+    // Actualizar estado a desconectado
+    _connectedDevice = _connectedDevice!.copyWith(
+      connectionStatus: BraceletConnectionStatus.disconnected,
+    );
+    
+    notifyListeners();
+    
+    // Enviar notificación de desconexión
+    try {
+      final notificationService = NotificationService();
+      await notificationService.showBraceletDisconnectedNotification();
+    } catch (e) {
+      print('[CONNECTION_CHECK] Error enviando notificación: $e');
+    }
+    
+    // Iniciar reconexión automática si está habilitada
+    if (_savedBracelet != null) {
+      final shouldReconnect = await BraceletStorageService.shouldAutoReconnect();
+      if (shouldReconnect) {
+        print('[CONNECTION_CHECK] 🔄 Iniciando reconexión automática...');
+        _startReconnectionLoop();
+      }
+    }
+  }
+  
   @override
   void dispose() {
     _reconnectionTimer?.cancel();
+    _connectionCheckTimer?.cancel();
     _connectionSubscription?.cancel();
     _characteristicSubscription?.cancel();
     super.dispose();

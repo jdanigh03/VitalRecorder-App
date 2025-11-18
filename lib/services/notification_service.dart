@@ -315,6 +315,29 @@ class NotificationService {
     print('Minutos restantes: $minutesUntil');
   }
   
+  /// Envía notificación cuando la manilla se desconecta
+  Future<void> showBraceletDisconnectedNotification() async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'bracelet_status_channel',
+      'Bracelet Status Notifications',
+      channelDescription: 'Notifications for bracelet connection status',
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher',
+    );
+    const NotificationDetails platformChannelSpecifics =
+        NotificationDetails(android: androidPlatformChannelSpecifics);
+    await _flutterLocalNotificationsPlugin.show(
+      999, // ID único para notificaciones de manilla
+      '⚠️ Manilla desconectada',
+      'La conexión con la manilla se ha perdido. Por favor verifica la conexión.',
+      platformChannelSpecifics,
+    );
+    print('📢 Notificación de desconexión de manilla enviada');
+  }
+  
   /// Verifica y envía notificaciones para recordatorios pendientes
   Future<void> checkAndSendReminderNotifications(List reminders) async {
     final now = DateTime.now();
