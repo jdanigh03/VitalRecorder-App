@@ -903,15 +903,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: reminder.isPaused 
+              ? Colors.grey.withOpacity(0.1)
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isVencido 
-                ? Colors.red.withOpacity(0.3)
-                : isPendiente
-                    ? Colors.orange.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isVencido || isPendiente ? 2 : 0,
+            color: reminder.isPaused
+                ? Colors.grey.withOpacity(0.5)
+                : isVencido 
+                    ? Colors.red.withOpacity(0.3)
+                    : isPendiente
+                        ? Colors.orange.withOpacity(0.3)
+                        : Colors.transparent,
+            width: reminder.isPaused || isVencido || isPendiente ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -1077,7 +1081,34 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             
             // Indicador de estado
-            if (isVencido)
+            if (reminder.isPaused)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'Pausado',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (isVencido)
               Positioned(
                 top: 8,
                 left: 8,

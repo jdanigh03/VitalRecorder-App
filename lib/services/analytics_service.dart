@@ -211,6 +211,9 @@ class AnalyticsService with CacheableMixin {
       final alerts = <Map<String, dynamic>>[];
       
       for (final reminder in reminders) {
+        // Excluir recordatorios pausados de las alertas
+        if (reminder.isPaused) continue;
+        
         // TODO: Verificar vencimiento con confirmaciones
         final nextOccurrence = reminder.getNextOccurrence();
         final isOverdue = nextOccurrence == null || nextOccurrence.isBefore(now);

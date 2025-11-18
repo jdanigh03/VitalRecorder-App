@@ -210,6 +210,8 @@ class CuidadorService {
       int completedToday = 0;
       
       for (final reminder in todayReminders) {
+        // Excluir recordatorios pausados de las estadísticas de hoy
+        if (reminder.isPaused) continue;
         final occurrences = reminder.calculateOccurrencesForDay(DateTime.now());
         for (final occurrence in occurrences) {
           final confirmations = await _reminderService.getConfirmations(reminder.id);
@@ -229,12 +231,15 @@ class CuidadorService {
         }
       }
       
-      final activeReminders = allReminders.length;
+      // Contar solo recordatorios activos (no pausados)
+      final activeReminders = allReminders.where((r) => !r.isPaused).length;
       
-      // Calcular adherencia promedio
+      // Calcular adherencia promedio (excluyendo pausados)
       double totalAdherence = 0;
       int remindersWithStats = 0;
       for (final reminder in allReminders) {
+        // Excluir recordatorios pausados del cálculo de adherencia
+        if (reminder.isPaused) continue;
         final stats = await _reminderService.getReminderStats(reminder.id);
         if (stats['total'] > 0) {
           totalAdherence += stats['adherenceRate'];
@@ -243,9 +248,11 @@ class CuidadorService {
       }
       final adherenceRate = remindersWithStats > 0 ? (totalAdherence / remindersWithStats).round() : 0;
       
-      final medicacionCount = allReminders.where((r) => r.type == 'Medicación' || r.type == 'medication').length;
-      final tareasCount = allReminders.where((r) => r.type == 'Tarea' || r.type == 'activity').length;
-      final citasCount = allReminders.where((r) => r.type == 'Cita' || r.type == 'appointment').length;
+      // Contar por tipo, excluyendo pausados
+      final activeRemindersOnly = allReminders.where((r) => !r.isPaused).toList();
+      final medicacionCount = activeRemindersOnly.where((r) => r.type == 'Medicación' || r.type == 'medication').length;
+      final tareasCount = activeRemindersOnly.where((r) => r.type == 'Tarea' || r.type == 'activity').length;
+      final citasCount = activeRemindersOnly.where((r) => r.type == 'Cita' || r.type == 'appointment').length;
       
       return {
         'totalPacientes': pacientes.length,

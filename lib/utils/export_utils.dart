@@ -284,7 +284,7 @@ class ExportUtils {
                 _buildTableCell(reminder.dateRangeText),
                 _buildTableCell(reminder.title),
                 _buildTableCell(reminder.description),
-                _buildTableCell(reminder.isActive ? 'ACTIVO' : 'FINALIZADO'),
+                _buildTableCell(_getStatusText(reminder)),
               ],
             )),
           ],
@@ -338,6 +338,10 @@ class ExportUtils {
             '- PENDIENTE: Recordatorio programado para fecha/hora futura',
             style: const pw.TextStyle(fontSize: 10),
           ),
+          pw.Text(
+            '- PAUSADO: Recordatorio temporalmente suspendido (no cuenta en estadísticas)',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
         ],
       ),
     );
@@ -368,6 +372,8 @@ class ExportUtils {
   static String _getStatusText(ReminderNew reminder) {
     final now = DateTime.now();
     
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
     if (!reminder.isActive) return 'FINALIZADO';
     if (reminder.endDate.isBefore(now)) return 'VENCIDO';
     if (reminder.startDate.isAfter(now)) return 'PROGRAMADO';

@@ -224,6 +224,8 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
   }
 
   String _getStatusText(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
     if (!reminder.isActive) return 'ARCHIVADO';
     
     final nextOccurrence = reminder.getNextOccurrence();
@@ -234,6 +236,8 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
   }
 
   IconData _getStatusIcon(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Icons.pause_circle;
     if (!reminder.isActive) return Icons.archive;
     
     final nextOccurrence = reminder.getNextOccurrence();
@@ -244,7 +248,9 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
   }
 
   Color _getStatusColor(ReminderNew reminder) {
-    if (!reminder.isActive) return Colors.grey;
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Colors.grey;
+    if (!reminder.isActive) return Colors.blueGrey;
     
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Colors.green;

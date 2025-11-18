@@ -27,7 +27,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   String _selectedStatus = 'Todos';
 
   final List<String> _filterOptions = ['Todos', 'Medicación', 'Tarea', 'Cita'];
-  final List<String> _statusOptions = ['Todos', 'Pendientes', 'Completados', 'Vencidos'];
+  final List<String> _statusOptions = ['Todos', 'Pendientes', 'Completados', 'Vencidos', 'Pausados'];
 
   @override
   void initState() {
@@ -86,7 +86,14 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       
       switch (_selectedStatus) {
         case 'Pendientes':
-          filtered = filtered.where((r) => r.hasOccurrencesOnDay(today) || r.startDate.isAfter(today)).toList();
+          // Mostrar recordatorios activos no pausados con ocurrencias
+          filtered = filtered.where((r) => 
+            !r.isPaused && (r.hasOccurrencesOnDay(today) || r.startDate.isAfter(today))
+          ).toList();
+          break;
+        case 'Pausados':
+          // Mostrar solo recordatorios pausados
+          filtered = filtered.where((r) => r.isPaused).toList();
           break;
         case 'Completados':
         case 'Vencidos':
@@ -764,13 +771,17 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: reminder.isPaused
+              ? Colors.grey.withOpacity(0.1)
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : Colors.transparent,
-            width: isPast ? 2 : 0,
+            color: reminder.isPaused
+                ? Colors.grey.withOpacity(0.5)
+                : isPast 
+                    ? Colors.red.withOpacity(0.3) 
+                    : Colors.transparent,
+            width: reminder.isPaused || isPast ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -890,24 +901,30 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                   Container(
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isPast 
-                          ? Colors.red.withOpacity(0.1)
-                          : reminder.isActive
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.grey.withOpacity(0.1),
+                      color: reminder.isPaused
+                          ? Colors.grey.withOpacity(0.1)
+                          : isPast 
+                              ? Colors.red.withOpacity(0.1)
+                              : reminder.isActive
+                                  ? Colors.green.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      isPast 
-                          ? Icons.error
-                          : reminder.isActive
-                              ? Icons.schedule
-                              : Icons.check_circle,
-                      color: isPast 
-                          ? Colors.red
-                          : reminder.isActive
-                              ? Colors.orange
-                              : Colors.grey,
+                      reminder.isPaused
+                          ? Icons.pause_circle
+                          : isPast 
+                              ? Icons.error
+                              : reminder.isActive
+                                  ? Icons.schedule
+                                  : Icons.check_circle,
+                      color: reminder.isPaused
+                          ? Colors.grey
+                          : isPast 
+                              ? Colors.red
+                              : reminder.isActive
+                                  ? Colors.orange
+                                  : Colors.grey,
                       size: 24,
                     ),
                   ),
@@ -915,8 +932,35 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
               ),
             ),
             
-            // Indicador de estado omitido
-            if (isPast)
+            // Indicador de estado
+            if (reminder.isPaused)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'Pausado',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (isPast)
               Positioned(
                 top: 8,
                 left: 8,
