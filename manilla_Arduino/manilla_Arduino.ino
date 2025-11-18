@@ -10,10 +10,8 @@
 #define DEVICE_NAME "Vital Recorder v2"
 
 // Configuración para ESP32-C3 Super Mini
-#define LED_PIN 8         // LED onboard (GPIO 8, lógica invertida)
 #define VIBRATION_PIN 3   // Motor de vibración (GPIO 3)
 #define BUTTON_PIN 2      // Botón externo en GPIO2
-#define LED_INVERTED true
 
 // Configuración de la pantalla OLED (SSD1306/SSD1315)
 #ifdef U8X8_HAVE_HW_I2C
@@ -42,8 +40,7 @@ volatile bool justDisconnected = false;
 uint32_t alertUntil = 0;
 int activeReminderId = -1;
 bool reminderActive = false;
-uint32_t ledBlinkTime = 0;
-bool ledState = false;
+uint32_t vibrationBlinkTime = 0;
 bool vibrationState = false;
 
 // Control de heartbeat para mantener conexión activa
@@ -102,15 +99,6 @@ void bleSendLine(const String& s) {
   pTxChar->notify();
 }
 
-// Función helper para controlar LED
-void setLED(bool state) {
-  if (LED_INVERTED) {
-    digitalWrite(LED_PIN, state ? LOW : HIGH);
-  } else {
-    digitalWrite(LED_PIN, state ? HIGH : LOW);
-  }
-}
-
 // Función helper para controlar motor de vibración
 void setVibration(bool state) {
   digitalWrite(VIBRATION_PIN, state ? HIGH : LOW);
@@ -148,8 +136,7 @@ void confirmReminder(int remIndex) {
     reminders[remIndex].confirmed = true;
     reminders[remIndex].synced = false; // Pendiente de sincronizar con app
     
-    // Apagar LED, vibración y limpiar estado
-    setLED(false);
+    // Apagar vibración y limpiar estado
     setVibration(false);
     reminderActive = false;
     activeReminderId = -1;
@@ -177,9 +164,8 @@ void activateReminder(int remIndex) {
     reminderActive = true;
     
     displayMessage("Recordatorio:", reminders[remIndex].title);
-    setLED(true);
     setVibration(true);
-    ledBlinkTime = millis();
+    vibrationBlinkTime = millis();
     
     // Timeout de 5 minutos para auto-marcar como omitido
     alertUntil = millis() + 300000;
@@ -376,9 +362,8 @@ private:
       }
       
       displayMessage("Recordatorio:", reminders[0].title);
-      setLED(true);
-      ledBlinkTime = millis();
-      
+      setVibration(true);
+      vibrationBlinkTime = millis();
       Serial.println("[SIMULATE] Alert activo");
       bleSendLine("OK SIMULATING_ALERT\r\n");
     } else if (up == "GET_PENDING") {
@@ -423,9 +408,7 @@ void startAdvertising() {
 }
 
 void setup() {
-  pinMode(LED_PIN, OUTPUT);
   pinMode(VIBRATION_PIN, OUTPUT);
-  setLED(false);
   setVibration(false);
   
   Serial.begin(115200);
@@ -435,7 +418,6 @@ void setup() {
   
   Serial.println();
   Serial.println("=== Vital Recorder v2.0 ===");
-  Serial.printf("LED: GPIO%d (%s)\n", LED_PIN, LED_INVERTED ? "invertido" : "normal");
   Serial.printf("Vibración: GPIO%d\n", VIBRATION_PIN);
 
   u8g2.begin();
@@ -567,7 +549,6 @@ void loop() {
       bleSendLine(msg + "\r\n");
       
       // Limpiar estado sin confirmar
-      setLED(false);
       setVibration(false);
       reminderActive = false;
       activeReminderId = -1;
@@ -575,12 +556,11 @@ void loop() {
       return;
     }
     
-    // Parpadear LED y vibración sincronizados
-    if (now - ledBlinkTime > 500) {
-      ledState = !ledState;
-      setLED(ledState);
-      setVibration(ledState);
-      ledBlinkTime = now;
+    // Parpadear vibración
+    if (now - vibrationBlinkTime > 500) {
+      vibrationState = !vibrationState;
+      setVibration(vibrationState);
+      vibrationBlinkTime = now;
     }
     
     delay(10);
@@ -601,7 +581,6 @@ void loop() {
     }
     
     if (alertUntil > 0) {
-      setLED(false);
       alertUntil = 0;
       lastDisplayUpdate = 0;
     }
