@@ -3,6 +3,7 @@ import '../models/reminder_new.dart';
 import '../reminder_schedule_calculator.dart';
 import '../widgets/reminder_creation_widgets.dart';
 import '../reminder_service_new.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AgregarRecordatorioNewScreen extends StatefulWidget {
   final ReminderNew? reminder; // Para editar
@@ -33,9 +34,12 @@ class _AgregarRecordatorioNewScreenState
   int _intervalValue = 8;
   List<TimeOfDay> _dailyTimes = [];
 
+  late FirebaseAuth _firebaseAuth; // Added this line
+
   @override
   void initState() {
     super.initState();
+    _firebaseAuth = FirebaseAuth.instance; // Added this line
 
     // Inicializar valores
     if (widget.reminder != null) {
@@ -78,6 +82,13 @@ class _AgregarRecordatorioNewScreenState
   }
 
   void _nextStep() {
+    if (_currentStep == 0) {
+      // Validate form before proceeding from step 1
+      if (!(_formKey.currentState?.validate() ?? false)) {
+        return; // Don't advance if form is invalid
+      }
+    }
+
     if (_currentStep < 4) {
       setState(() => _currentStep++);
       _pageController.animateToPage(
@@ -116,15 +127,8 @@ class _AgregarRecordatorioNewScreenState
   }
 
   Future<void> _saveReminder() async {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Por favor completa todos los campos requeridos'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+    // La validación del formulario ahora se maneja en _nextStep al salir del paso 1,
+    // ya que el formulario no está visible en los pasos posteriores.
 
     try {
       // Mostrar loading
@@ -154,6 +158,16 @@ class _AgregarRecordatorioNewScreenState
         59,
       );
 
+      String? currentUserId = _firebaseAuth.currentUser?.uid;
+      if (currentUserId == null) {
+        // Handle case where user is not logged in. This shouldn't happen if AuthWrapper is working.
+        Navigator.pop(context); // Close loading dialog if it was shown
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: Usuario no autenticado.'), backgroundColor: Colors.red,),
+        );
+        return;
+      }
+
       // Crear el recordatorio
       final reminder = ReminderNew(
         id: widget.reminder?.id ?? '',
@@ -165,6 +179,8 @@ class _AgregarRecordatorioNewScreenState
         intervalType: _intervalType,
         intervalValue: _intervalValue,
         dailyScheduleTimes: _dailyTimes,
+        userId: currentUserId,
+        createdBy: currentUserId,
         createdAt: widget.reminder?.createdAt ?? DateTime.now(),
       );
 

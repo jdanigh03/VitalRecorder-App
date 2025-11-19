@@ -462,6 +462,22 @@ class BraceletService extends ChangeNotifier {
         print("[PROCESS] 📋 Lista de completados detectada");
         // Lista de recordatorios completados al reconectar
         _handleCompletedListSync(response);
+      } else if (response.startsWith('OK REMINDER_CONFIRMED')) {
+        print("[PROCESS] 🟢 Detectado recordatorio confirmado desde la manilla");
+        try {
+          final parts = response.split(' ');
+          if (parts.length >= 3) {
+            final reminderIndex = int.tryParse(parts[2]);
+            if (reminderIndex != null) {
+              print("[PROCESS] 🔢 Índice de recordatorio confirmado: $reminderIndex");
+              _handleReminderCompletedByButton(reminderIndex);
+            } else {
+              print("[PROCESS] ⚠️ No se pudo parsear el índice del recordatorio.");
+            }
+          }
+        } catch (e) {
+          print("[PROCESS] ❌ Error parseando mensaje REMINDER_CONFIRMED: $e");
+        }
       } else {
         print("[PROCESS] ℹ️ Mensaje no procesado: $response");
       }

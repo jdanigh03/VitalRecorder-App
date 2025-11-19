@@ -129,12 +129,15 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       // Cargar invitaciones pendientes
       await _loadInvitacionesPendientes();
       
+      if (!mounted) return;
+      
       setState(() {
         _isLoading = false;
         _hasInitialized = true;
       });
     } catch (e) {
       print('Error cargando datos del cuidador: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _cuidadorName = 'Cuidador';
