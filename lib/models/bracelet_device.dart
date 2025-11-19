@@ -128,13 +128,16 @@ class BraceletCommand {
     return 'SYNC_TIME $localTimestamp';
   }
   static const String clearReminders = 'REM_CLEAR';
-  static String addReminder(int hour, int minute, String title) {
-    // Escapar comillas en el título si es necesario y truncar
-    String safeTitle = title.replaceAll('"', '\'');
-    if (safeTitle.length > 19) {
-      safeTitle = safeTitle.substring(0, 19);
-    }
-    return 'REM_ADD $hour:$minute "$safeTitle"';
+  static String addReminder(int hour, int minute, String title, String description) {
+    // Truncate title to be safe
+    final cleanTitle = title.replaceAll('"', ''); // Remove quotes
+    final truncatedTitle = cleanTitle.length > 29 ? cleanTitle.substring(0, 29) : cleanTitle;
+    
+    // Truncate description to be safe
+    final cleanDesc = description.replaceAll('"', '');
+    final truncatedDesc = cleanDesc.length > 49 ? cleanDesc.substring(0, 49) : cleanDesc;
+    
+    return 'REM_ADD $hour:$minute "$truncatedTitle" "$truncatedDesc"';
   }
   static String completeReminder(int index) => 'REM_COMPLETE $index';
   

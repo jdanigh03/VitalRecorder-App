@@ -101,6 +101,7 @@ class BraceletService extends ChangeNotifier {
               'hour': time.hour,
               'minute': time.minute,
               'title': reminder.title,
+              'description': reminder.description,
               'reminderId': reminder.id,
             });
           }
@@ -124,6 +125,7 @@ class BraceletService extends ChangeNotifier {
           occ['hour'] as int,
           occ['minute'] as int,
           occ['title'] as String,
+          occ['description'] as String,
         );
         await sendCommand(command);
         await Future.delayed(const Duration(milliseconds: 200));

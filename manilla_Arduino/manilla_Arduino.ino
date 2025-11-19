@@ -47,6 +47,14 @@ bool vibrationState = false;
 uint32_t lastHeartbeatTime = 0;
 const uint32_t HEARTBEAT_INTERVAL = 30000; // 30 segundos
 
+// Globals para scrolling de texto
+bool isScrolling = false;
+char scrollingTextLine1[30];
+char scrollingTextLine2[50];
+int16_t scrollX1 = 0;
+int16_t scrollX2 = 0;
+uint32_t lastScrollTime = 0;
+
 // ---------- Lógica de Recordatorios v2 ----------
 // Ahora cada recordatorio representa una OCURRENCIA específica
 const int MAX_REMINDERS = 20;  // Aumentado para manejar más ocurrencias
@@ -54,6 +62,7 @@ struct Reminder {
   uint8_t hour;
   uint8_t minute;
   char title[30];        // Título más largo
+  char description[50];  // Descripción del recordatorio
   char reminderId[36];   // UUID del recordatorio (para sync con Firestore)
   char occurrenceId[50]; // ID único de la ocurrencia (formato: reminderId_scheduledTime)
   bool confirmed;        // Si fue confirmado desde la manilla
@@ -138,6 +147,7 @@ void confirmReminder(int remIndex) {
     
     // Apagar vibración y limpiar estado
     setVibration(false);
+    isScrolling = false; // Detener scroll
     reminderActive = false;
     activeReminderId = -1;
     alertUntil = 0;
@@ -158,12 +168,36 @@ void confirmReminder(int remIndex) {
 }
 
 // Activar recordatorio
+// Inicia el proceso de mostrar texto con scroll si es necesario
+void displayAndScrollMessage(const char* line1, const char* line2) {
+  strncpy(scrollingTextLine1, line1, 29);
+  scrollingTextLine1[29] = '\0';
+  strncpy(scrollingTextLine2, line2, 49);
+  scrollingTextLine2[49] = '\0';
+  
+  u8g2.setFont(u8g2_font_ncenB10_tr);
+  int16_t textWidth1 = u8g2.getStrWidth(scrollingTextLine1);
+  int16_t textWidth2 = u8g2.getStrWidth(scrollingTextLine2);
+
+  // Iniciar scroll solo si el texto es más largo que la pantalla
+  if (textWidth1 > 128 || textWidth2 > 128) {
+    scrollX1 = 0;
+    scrollX2 = 0;
+    isScrolling = true;
+    lastScrollTime = millis();
+  } else {
+    // Si no necesita scroll, mostrarlo estático
+    isScrolling = false;
+    displayMessage(line1, line2);
+  }
+}
+
 void activateReminder(int remIndex) {
   if (remIndex >= 0 && remIndex < reminderCount && !reminders[remIndex].confirmed) {
     activeReminderId = remIndex;
     reminderActive = true;
     
-    displayMessage("Recordatorio:", reminders[remIndex].title);
+    displayAndScrollMessage(reminders[remIndex].title, reminders[remIndex].description);
     setVibration(true);
     vibrationBlinkTime = millis();
     
@@ -297,39 +331,39 @@ private:
       bleSendLine("OK REM_CLEARED\r\n");
       Serial.println("[REM] Recordatorios borrados");
     } else if (up.startsWith("REM_ADD ")) {
-      // REM_ADD HH:MM "Title" "ReminderId" "OccurrenceId" <ScheduledTimestamp>
+      // Formato esperado: REM_ADD HH:MM "Title" "Description"
       if (reminderCount >= MAX_REMINDERS) {
         bleSendLine("ERR REM_FULL\r\n");
         return;
       }
       
-      // Parsear comando más complejo
-      int hour, minute;
-      char title[30], remId[36], occId[50];
-      uint32_t schedTime;
-      
-      // Formato simplificado: REM_ADD HH:MM "Title"
+      // Parsear el comando
       int firstQuote = cmd.indexOf('"');
       int secondQuote = cmd.indexOf('"', firstQuote + 1);
-      
-      if (firstQuote > 0 && secondQuote > firstQuote) {
+      int thirdQuote = cmd.indexOf('"', secondQuote + 1);
+      int fourthQuote = cmd.indexOf('"', thirdQuote + 1);
+
+      if (firstQuote > 0 && secondQuote > firstQuote && thirdQuote > secondQuote && fourthQuote > thirdQuote) {
         String timeStr = cmd.substring(8, firstQuote);
         timeStr.trim();
         String titleStr = cmd.substring(firstQuote + 1, secondQuote);
-        
+        String descStr = cmd.substring(thirdQuote + 1, fourthQuote);
+
+        int hour, minute;
         if (sscanf(timeStr.c_str(), "%d:%d", &hour, &minute) == 2) {
           reminders[reminderCount].hour = hour;
           reminders[reminderCount].minute = minute;
           strncpy(reminders[reminderCount].title, titleStr.c_str(), 29);
           reminders[reminderCount].title[29] = '\0';
+          strncpy(reminders[reminderCount].description, descStr.c_str(), 49);
+          reminders[reminderCount].description[49] = '\0';
           reminders[reminderCount].confirmed = false;
           reminders[reminderCount].synced = true;
-          reminders[reminderCount].scheduledTime = deviceClock;
           
-          // Generar IDs temporales si no se proporcionan
+          // Generar IDs temporales
           snprintf(reminders[reminderCount].reminderId, 36, "REM_%d", reminderCount);
           snprintf(reminders[reminderCount].occurrenceId, 50, "OCC_%d_%d", reminderCount, hour * 60 + minute);
-          
+
           reminderCount++;
           bleSendLine("OK REM_ADDED\r\n");
           showSyncConfirmation = true;
@@ -550,6 +584,7 @@ void loop() {
       
       // Limpiar estado sin confirmar
       setVibration(false);
+      isScrolling = false; // Detener scroll
       reminderActive = false;
       activeReminderId = -1;
       alertUntil = 0;
@@ -561,6 +596,42 @@ void loop() {
       vibrationState = !vibrationState;
       setVibration(vibrationState);
       vibrationBlinkTime = now;
+    }
+
+    // Lógica de Scrolling
+    if (isScrolling && (now - lastScrollTime > 35)) { // Velocidad de scroll (menos es más rápido)
+      lastScrollTime = now;
+      
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_ncenB10_tr);
+      
+      int16_t textWidth1 = u8g2.getStrWidth(scrollingTextLine1);
+      int16_t textWidth2 = u8g2.getStrWidth(scrollingTextLine2);
+      
+      u8g2.drawStr(scrollX1, 25, scrollingTextLine1);
+      if (strlen(scrollingTextLine2) > 0) {
+        u8g2.drawStr(scrollX2, 50, scrollingTextLine2);
+      }
+      
+      u8g2.sendBuffer();
+      
+      if (textWidth1 > 128) {
+        scrollX1--;
+        if (scrollX1 < (128 - textWidth1 - 10)) { // 10 es un padding
+          scrollX1 = 10; // Reiniciar con un pequeño delay al inicio
+        }
+      } else {
+        scrollX1 = (128 - textWidth1) / 2; // Centrar si no hay scroll
+      }
+      
+      if (textWidth2 > 128) {
+        scrollX2--;
+        if (scrollX2 < (128 - textWidth2 - 10)) {
+          scrollX2 = 10;
+        }
+      } else {
+        scrollX2 = (128 - textWidth2) / 2; // Centrar si no hay scroll
+      }
     }
     
     delay(10);
