@@ -17,9 +17,13 @@ import 'screens/bracelet_control_screen.dart';
 import 'package:vital_recorder_app/services/notification_service.dart';
 import 'package:vital_recorder_app/services/background_ble_service_simple.dart';
 import 'package:vital_recorder_app/services/bracelet_service.dart';
+import 'package:vital_recorder_app/background_polling_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializar Workmanager para polling en segundo plano
+  await BackgroundPollingService.initialize();
 
   // Inicializar localización antes de Firebase
   await initializeDateFormatting('es_ES', null);

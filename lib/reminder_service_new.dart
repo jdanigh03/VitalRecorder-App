@@ -65,7 +65,7 @@ class ReminderServiceNew {
       _syncWithBraceletSafely();
       
       // Notificar a los cuidadores sobre el nuevo recordatorio
-      await _notificarCuidadores(newReminder, esNuevo: true);
+      await _notificarEvento(newReminder, accion: 'created');
       
       return true;
     } catch (e) {
@@ -177,7 +177,7 @@ class ReminderServiceNew {
       _syncWithBraceletSafely();
       
       // Notificar a los cuidadores sobre la edición
-      await _notificarCuidadores(updatedReminder, esNuevo: false);
+      await _notificarEvento(updatedReminder, accion: 'updated');
       
       return true;
     } catch (e) {
@@ -198,23 +198,39 @@ class ReminderServiceNew {
     return false;
   }
 
-  /// Notifica a los cuidadores sobre cambios en el recordatorio
-  Future<void> _notificarCuidadores(ReminderNew reminder, {required bool esNuevo}) async {
+  /// Notifica a los cuidadores sobre eventos del recordatorio
+  Future<void> _notificarEvento(ReminderNew reminder, {
+    required String accion,
+    String? detalle
+  }) async {
     try {
       // Obtener nombre del paciente
       final userData = await _userService.getUserData(reminder.userId ?? '');
       final pacienteNombre = userData?.persona.nombres ?? 'Un paciente';
 
       // Enviar notificación
-      await _notificationService.notificarCuidadoresSobreRecordatorio(
+      await _notificationService.notificarEventoRecordatorio(
         pacienteId: reminder.userId ?? '',
         pacienteNombre: pacienteNombre,
         recordatorioTitulo: reminder.title,
-        esNuevo: esNuevo,
+        accion: accion,
+        detalle: detalle,
       );
     } catch (e) {
       print('⚠️ Error al notificar cuidadores: $e');
       // No lanzar error para no afectar la creación/edición del recordatorio
+    }
+  }
+
+  /// Helper para notificar cuando solo tenemos el ID
+  Future<void> _notificarEventoPorId(String reminderId, String accion, {String? detalle}) async {
+    try {
+      final reminder = await getReminderById(reminderId);
+      if (reminder != null) {
+        await _notificarEvento(reminder, accion: accion, detalle: detalle);
+      }
+    } catch (e) {
+      print('⚠️ Error al notificar por ID: $e');
     }
   }
 
@@ -263,6 +279,9 @@ class ReminderServiceNew {
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
+
+      // Notificar evento
+      _notificarEventoPorId(reminderId, 'paused');
       
       return true;
     } catch (e) {
@@ -317,6 +336,9 @@ class ReminderServiceNew {
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
+
+      // Notificar evento
+      _notificarEventoPorId(reminderId, 'resumed');
       
       return true;
     } catch (e) {
@@ -337,6 +359,9 @@ class ReminderServiceNew {
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
+
+      // Notificar evento
+      _notificarEventoPorId(reminderId, 'archived');
       
       return true;
     } catch (e) {
@@ -498,6 +523,29 @@ class ReminderServiceNew {
       });
 
       print('✅ Recordatorio confirmado: $reminderId @ $scheduledTime');
+
+      // Calcular si fue tarde y notificar
+      final now = DateTime.now();
+      // scheduledTime viene sin info de zona horaria a veces, asegurar comparación correcta
+      final diff = now.difference(scheduledTime);
+      
+      String accion = 'confirmed';
+      String? detalle;
+      
+      // Si la diferencia es mayor a 30 minutos, considerar tarde
+      if (diff.inMinutes > 30) {
+        accion = 'confirmed_late';
+        final hours = diff.inHours;
+        final mins = diff.inMinutes % 60;
+        if (hours > 0) {
+          detalle = '$hours h $mins min tarde';
+        } else {
+          detalle = '$mins min tarde';
+        }
+      }
+      
+      _notificarEventoPorId(reminderId, accion, detalle: detalle);
+
       return true;
     } catch (e) {
       print('❌ Error confirmando recordatorio: $e');
@@ -525,6 +573,10 @@ class ReminderServiceNew {
       });
 
       print('⚠️ Recordatorio marcado como omitido: $reminderId @ $scheduledTime');
+      
+      // Notificar evento
+      _notificarEventoPorId(reminderId, 'missed');
+
       return true;
     } catch (e) {
       print('❌ Error marcando como omitido: $e');
@@ -664,6 +716,43 @@ class ReminderServiceNew {
       data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
     }
     return ReminderConfirmation.fromMap(data);
+  }
+
+  /// Verifica si hay recordatorios pasados que no se confirmaron y los marca como omitidos
+  Future<void> checkMissedReminders() async {
+    try {
+      final userId = _currentUserId;
+      if (userId == null) return;
+
+      final now = DateTime.now();
+      // Consideramos omitido si pasaron más de 60 minutos
+      final threshold = now.subtract(Duration(minutes: 60));
+
+      // Buscar confirmaciones pendientes anteriores al umbral
+      final snapshot = await _confirmationsCollection
+          .where('userId', isEqualTo: userId)
+          .where('status', isEqualTo: 'PENDING')
+          .where('scheduledTime', isLessThan: Timestamp.fromDate(threshold))
+          .get();
+
+      if (snapshot.docs.isEmpty) return;
+
+      print('🔍 Verificando omitidos: ${snapshot.docs.length} candidatos');
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final reminderId = data['reminderId'];
+        final scheduledTime = (data['scheduledTime'] as Timestamp).toDate();
+        
+        // Marcar como omitido (esto disparará la notificación al cuidador)
+        await markAsMissed(
+          reminderId: reminderId,
+          scheduledTime: scheduledTime,
+        );
+      }
+    } catch (e) {
+      print('❌ Error verificando recordatorios omitidos: $e');
+    }
   }
 
   /// Sincroniza con la manilla de forma segura (sin bloquear la operación principal)

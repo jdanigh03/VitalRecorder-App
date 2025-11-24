@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/notification_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder_new.dart';
 import '../models/reminder_confirmation.dart';
@@ -35,11 +37,13 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   final UserService _userService = UserService();
   final InvitacionService _invitacionService = InvitacionService();
   final ReminderServiceNew _reminderService = ReminderServiceNew();
+  final NotificationService _notificationService = NotificationService();
   
   // Datos
   UserModel? _currentUserData;
   List<ReminderNew> _todayReminders = [];
   int _invitacionesPendientes = 0;
+  int _notificacionesNoLeidas = 0; // Para control de estado anterior
 
   @override
   void initState() {
@@ -47,6 +51,56 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     WidgetsBinding.instance.addObserver(this);
     _hasInitialized = false;
     _loadUserData();
+    _setupNotificacionesStream();
+  }
+
+  // Escuchar notificaciones en tiempo real (Foreground)
+  void _setupNotificacionesStream() {
+    _notificationService.getNotificacionesPendientes().listen((notificaciones) {
+      if (!mounted) return;
+
+      // Calcular cuántas son nuevas
+      final nuevasCount = notificaciones.length;
+      
+      // Si hay nuevas notificaciones (más que antes)
+      if (nuevasCount > _notificacionesNoLeidas && _hasInitialized) {
+        // Mostrar notificación local o snackbar solo para la última (más reciente)
+        if (notificaciones.isNotEmpty) {
+           final ultima = notificaciones.first; // Ordenado por fecha desc
+           // Verificar si es realmente reciente (ej. creada hace menos de 1 min)
+           // Para no spammear al inicio
+           
+           // Mostrar Local Notification (Banner del sistema)
+           _notificationService.sendLocalNotification(
+             ultima['titulo'] ?? 'Nueva notificación', 
+             ultima['mensaje'] ?? 'Tienes un nuevo mensaje'
+           );
+           
+           // Opcional: Mostrar SnackBar dentro de la app
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(ultima['mensaje'] ?? 'Nueva notificación'),
+              backgroundColor: Colors.blue,
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Ver',
+                textColor: Colors.white,
+                onPressed: () {
+                   Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => NotificacionesScreen()),
+                  );
+                },
+              ),
+            ),
+          );
+        }
+      }
+      
+      setState(() {
+        _notificacionesNoLeidas = nuevasCount;
+      });
+    });
   }
 
   @override
@@ -433,7 +487,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+                    MaterialPageRoute(builder: (context) => NotificacionesScreen()),
                   );
                 },
               ),

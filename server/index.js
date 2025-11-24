@@ -172,4 +172,41 @@ app.get('/api/libelula/pago-exitoso', async (req, res) => {
 
 app.get('/return', (_req, res) => res.send('Gracias. Puedes cerrar esta pestaña.'));
 
+// Enviar notificación push
+app.post('/api/notifications/send', async (req, res) => {
+  try {
+    const { userId, title, body, data } = req.body;
+    if (!userId || !title || !body) {
+      return res.status(400).json({ error: true, mensaje: 'Faltan parámetros' });
+    }
+
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: true, mensaje: 'Usuario no encontrado' });
+    }
+
+    const userData = userDoc.data();
+    const fcmToken = userData.fcmToken;
+
+    if (!fcmToken) {
+      return res.status(400).json({ error: true, mensaje: 'Usuario sin token FCM' });
+    }
+
+    const message = {
+      notification: {
+        title,
+        body,
+      },
+      data: data || {},
+      token: fcmToken,
+    };
+
+    await admin.messaging().send(message);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error enviando notificación:', e);
+    return res.status(500).json({ error: true, mensaje: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`Payments server listening on http://localhost:${PORT}`));

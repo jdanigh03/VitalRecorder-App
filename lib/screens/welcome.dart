@@ -1,6 +1,7 @@
 // ========================================
 // ARCHIVO: lib/screens/welcome.dart
 // ========================================
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
 import '../models/reminder_new.dart';
@@ -48,6 +49,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   // Datos del usuario
   UserModel? _currentUserData;
   List<ReminderNew> _todayReminders = [];
+  Timer? _checkMissedTimer;
 
   @override
   void initState() {
@@ -55,11 +57,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     _hasInitialized = false;
     _loadUserData();
+    
+    // Iniciar timer para verificar recordatorios omitidos cada minuto
+    _checkMissedTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      _reminderService.checkMissedReminders();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _checkMissedTimer?.cancel();
     super.dispose();
   }
 

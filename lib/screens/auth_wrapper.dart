@@ -5,6 +5,9 @@ import 'welcome.dart';
 import 'cuidador_dashboard.dart';
 import 'login_screen.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vital_recorder_app/background_polling_service.dart';
+
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({Key? key}) : super(key: key);
 
@@ -96,6 +99,17 @@ class _RoleBasedNavigationState extends State<RoleBasedNavigation> {
       print('UID: ${widget.user.uid}');
       print('Email: ${widget.user.email}');
       print('Rol: $userRole');
+
+      // Guardar UID en SharedPreferences para Workmanager
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('current_user_id', widget.user.uid);
+        
+        // Registrar tarea en segundo plano (Agresiva)
+        await BackgroundPollingService.startAggressivePolling();
+      } catch (e) {
+        print('Error configurando servicio de fondo: $e');
+      }
 
       setState(() => _isLoading = false);
 

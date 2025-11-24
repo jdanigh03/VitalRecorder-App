@@ -4,6 +4,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
@@ -37,6 +39,17 @@ class NotificationService {
     // Obtener el token del dispositivo (FCM Token)
     final fcmToken = await _firebaseMessaging.getToken();
     print('FCM Token: $fcmToken');
+
+    // Guardar token en Firestore
+    if (fcmToken != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'fcmToken': fcmToken,
+          'lastTokenUpdate': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
 
     // Inicializar el plugin de notificaciones locales
     const AndroidInitializationSettings initializationSettingsAndroid =
@@ -144,6 +157,26 @@ class NotificationService {
         mensaje: mensaje,
         data: data,
       );
+
+      // Intentar enviar Push mediante Backend
+      try {
+         // Usar 10.0.2.2 para Android Emulator, localhost para iOS/Web.
+         // Cambiar si el servidor está en otra IP.
+         final url = Uri.parse('http://10.0.2.2:3000/api/notifications/send'); 
+         await http.post(
+           url,
+           headers: {'Content-Type': 'application/json'},
+           body: jsonEncode({
+             'userId': destinatarioUserId,
+             'title': titulo,
+             'body': mensaje,
+             'data': data,
+           }),
+         );
+         print('✅ Notificación Push enviada al backend');
+      } catch (e) {
+         print('⚠️ No se pudo enviar al backend (posiblemente no disponible): $e');
+      }
       
       print('=== NOTIFICACIÓN PENDIENTE CREADA ===');
       print('Para usuario: $destinatarioUserId');
@@ -179,12 +212,13 @@ class NotificationService {
         .add(notificacionData);
   }
 
-  /// Notifica a los cuidadores sobre la creación o edición de un recordatorio
-  Future<void> notificarCuidadoresSobreRecordatorio({
+  /// Notifica a los cuidadores sobre eventos del recordatorio
+  Future<void> notificarEventoRecordatorio({
     required String pacienteId,
     required String pacienteNombre,
     required String recordatorioTitulo,
-    required bool esNuevo,
+    required String accion, // 'created', 'updated', 'paused', 'resumed', 'archived', 'missed', 'confirmed', 'confirmed_late'
+    String? detalle, // Para detalles adicionales como "30 min tarde"
   }) async {
     try {
       // Obtener todos los cuidadores del paciente
@@ -199,10 +233,51 @@ class NotificationService {
         return;
       }
 
-      // Crear el mensaje apropiado
-      final accion = esNuevo ? 'ha creado' : 'ha editado';
-      final titulo = esNuevo ? '¡Nuevo recordatorio!' : 'Recordatorio actualizado';
-      final mensaje = '$pacienteNombre $accion el recordatorio "$recordatorioTitulo"';
+      String titulo = '';
+      String mensaje = '';
+      String tipoNotif = 'recordatorio_evento';
+
+      switch (accion) {
+        case 'created':
+          titulo = '¡Nuevo recordatorio!';
+          mensaje = '$pacienteNombre ha creado el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'updated':
+          titulo = 'Recordatorio actualizado';
+          mensaje = '$pacienteNombre ha editado el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'paused':
+          titulo = 'Recordatorio pausado';
+          mensaje = '$pacienteNombre ha pausado el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'resumed':
+          titulo = 'Recordatorio reanudado';
+          mensaje = '$pacienteNombre ha reanudado el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'archived':
+          titulo = 'Recordatorio archivado';
+          mensaje = '$pacienteNombre ha archivado el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'missed':
+          titulo = 'Recordatorio omitido';
+          mensaje = '$pacienteNombre no aceptó/omitió el recordatorio "$recordatorioTitulo"';
+          tipoNotif = 'alerta_adherencia';
+          break;
+        case 'confirmed':
+          // Opcional: Tal vez no notificar confirmaciones normales para no saturar
+          // Pero si se pide, se hace.
+          titulo = 'Recordatorio completado';
+          mensaje = '$pacienteNombre completó el recordatorio "$recordatorioTitulo"';
+          break;
+        case 'confirmed_late':
+          titulo = 'Recordatorio completado con retraso';
+          mensaje = '$pacienteNombre completó "$recordatorioTitulo" tarde ($detalle)';
+          tipoNotif = 'alerta_adherencia';
+          break;
+        default:
+          titulo = 'Actividad en recordatorio';
+          mensaje = '$pacienteNombre: Actividad en "$recordatorioTitulo"';
+      }
 
       // Enviar notificación a cada cuidador
       for (final doc in cuidadoresSnapshot.docs) {
@@ -213,19 +288,34 @@ class NotificationService {
             titulo: titulo,
             mensaje: mensaje,
             data: {
-              'tipo': 'recordatorio_modificado',
+              'tipo': tipoNotif,
               'pacienteId': pacienteId,
               'recordatorioTitulo': recordatorioTitulo,
-              'accion': esNuevo ? 'creado' : 'editado',
+              'accion': accion,
             },
           );
         }
       }
 
-      print('✅ Notificaciones enviadas a ${cuidadoresSnapshot.docs.length} cuidador(es)');
+      print('✅ Notificaciones de evento "$accion" enviadas a ${cuidadoresSnapshot.docs.length} cuidador(es)');
     } catch (e) {
-      print('❌ Error notificando a cuidadores: $e');
+      print('❌ Error notificando evento a cuidadores: $e');
     }
+  }
+
+  /// Notifica a los cuidadores sobre la creación o edición de un recordatorio (Legacy support)
+  Future<void> notificarCuidadoresSobreRecordatorio({
+    required String pacienteId,
+    required String pacienteNombre,
+    required String recordatorioTitulo,
+    required bool esNuevo,
+  }) async {
+    return notificarEventoRecordatorio(
+      pacienteId: pacienteId,
+      pacienteNombre: pacienteNombre,
+      recordatorioTitulo: recordatorioTitulo,
+      accion: esNuevo ? 'created' : 'updated',
+    );
   }
 
   /// Obtiene las notificaciones pendientes para el usuario actual

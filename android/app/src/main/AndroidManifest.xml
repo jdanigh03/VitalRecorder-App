@@ -23,7 +23,7 @@
     <!-- Declarar características BLE -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <application
-        android:label="vital_recorder_app"
+        android:label="Vital Recorder"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
