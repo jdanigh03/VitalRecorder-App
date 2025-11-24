@@ -37,7 +37,15 @@ class PaymentService {
   }
 
   Future<void> abrirPasarela(Uri url) async {
-    final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+    // Usamos inAppWebView para abrir el enlace dentro de la aplicación
+    final ok = await launchUrl(
+      url, 
+      mode: LaunchMode.inAppWebView,
+      webViewConfiguration: const WebViewConfiguration(
+        enableJavaScript: true,
+        enableDomStorage: true,
+      ),
+    );
     if (!ok) throw Exception('No se pudo abrir la pasarela de pagos');
   }
 }

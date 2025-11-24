@@ -38,14 +38,13 @@ class PaymentLimitService {
     return count < limit;
   }
 
-  /// Inicia el flujo de compra (crea deuda y abre pasarela)
-  Future<void> startPurchaseFlow() async {
+  /// Inicia el flujo de compra y retorna la URL de la pasarela
+  Future<Uri?> startPurchaseFlow() async {
     final svc = PaymentService();
     final url = await svc.solicitarCupoAdicional();
-    if (url != null) {
-      await svc.abrirPasarela(url);
-    } else {
+    if (url == null) {
       throw Exception('No se recibió URL de pasarela');
     }
+    return url;
   }
 }

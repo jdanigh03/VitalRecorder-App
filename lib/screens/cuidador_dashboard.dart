@@ -491,7 +491,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   );
                 },
               ),
-              if (pendingCount > 0)
+              if (_notificacionesNoLeidas > 0)
                 Positioned(
                   right: 8,
                   top: 8,
@@ -506,7 +506,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                       minHeight: 18,
                     ),
                     child: Text(
-                      '$pendingCount',
+                      '$_notificacionesNoLeidas',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 10,
@@ -517,15 +517,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ),
                 ),
             ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AjustesScreen()),
-              );
-            },
           ),
         ],
       ),
