@@ -18,7 +18,21 @@ class ReminderScheduleCalculator {
     int currentMinutes = startTime.hour * 60 + startTime.minute;
     const minutesInDay = 24 * 60;
 
-    while (currentMinutes < minutesInDay) {
+    while (currentMinutes <= minutesInDay) {
+      if (currentMinutes == minutesInDay) {
+        // Si llegamos exactamente a las 24:00 (fin del día)
+        // Verificamos si ya tenemos las 00:00 (inicio del día)
+        bool hasMidnight = schedule.any((t) => t.hour == 0 && t.minute == 0);
+        
+        // Si no empezamos a las 00:00, agregamos 23:59 para cerrar el día
+        // Esto cubre el caso de empezar a las 08:00 con intervalo de 8h:
+        // 08:00, 16:00, y agregamos 23:59 (en lugar de perder la de las 24:00)
+        if (!hasMidnight) {
+          schedule.add(TimeOfDay(hour: 23, minute: 59));
+        }
+        break;
+      }
+
       int hour = (currentMinutes ~/ 60) % 24;
       int minute = currentMinutes % 60;
       schedule.add(TimeOfDay(hour: hour, minute: minute));
@@ -126,14 +140,43 @@ class ReminderScheduleCalculator {
     return false;
   }
 
-  /// Calcula el total de recordatorios en un rango de fechas
+  /// Calcula el total de recordatorios reales (filtrando los pasados)
   static int calculateTotalReminders({
     required DateTime startDate,
     required DateTime endDate,
-    required int remindersPerDay,
+    required List<TimeOfDay> dailyTimes,
   }) {
-    final days = endDate.difference(startDate).inDays + 1;
-    return days * remindersPerDay;
+    int count = 0;
+    final now = DateTime.now();
+    // Tolerancia de 15 min para coincidir con el backend
+    final tolerance = now.subtract(Duration(minutes: 15));
+    
+    // Normalizar fechas a medianoche
+    DateTime current = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = DateTime(endDate.year, endDate.month, endDate.day);
+    
+    while (!current.isAfter(end)) {
+      for (final time in dailyTimes) {
+        final scheduledTime = DateTime(
+          current.year,
+          current.month,
+          current.day,
+          time.hour,
+          time.minute,
+        );
+        
+        // Solo contar si es futuro (o dentro de la tolerancia)
+        // Y también verificar que esté dentro del rango de fechas original (por si acaso)
+        if (scheduledTime.isAfter(tolerance)) {
+           // Verificar también que no sea antes del startDate original con hora (si fuera el caso)
+           // pero aquí asumimos que startDate/endDate definen los días inclusivos.
+           count++;
+        }
+      }
+      current = current.add(Duration(days: 1));
+    }
+    
+    return count;
   }
 
   /// Genera resumen textual del recordatorio

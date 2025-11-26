@@ -252,6 +252,7 @@ class _IntervalSelectorState extends State<IntervalSelector> {
     setState(() {
       _value = value;
       _isCustom = false;
+      _type = IntervalType.HOURS; // Forzar horas al seleccionar preset
       widget.onChanged(_type, _value);
     });
   }
@@ -272,53 +273,22 @@ class _IntervalSelectorState extends State<IntervalSelector> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Frecuencia',
+          'Frecuencia (Horas)',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
             color: Color(0xFF1E3A5F),
           ),
         ),
-        SizedBox(height: 12),
-        
-        // Toggle tipo (Horas/Días)
-        Row(
-          children: [
-            Text('Cada:', style: TextStyle(fontSize: 14)),
-            SizedBox(width: 12),
-            SegmentedButton<IntervalType>(
-              segments: [
-                ButtonSegment(
-                  value: IntervalType.HOURS,
-                  label: Text('Horas'),
-                  icon: Icon(Icons.access_time, size: 16),
-                ),
-                ButtonSegment(
-                  value: IntervalType.DAYS,
-                  label: Text('Días'),
-                  icon: Icon(Icons.calendar_today, size: 16),
-                ),
-              ],
-              selected: {_type},
-              onSelectionChanged: (Set<IntervalType> newSelection) {
-                setState(() {
-                  _type = newSelection.first;
-                  widget.onChanged(_type, _value);
-                });
-              },
-            ),
-          ],
-        ),
-        
         SizedBox(height: 16),
         
         // Opciones predefinidas (solo para HOURS)
-        if (_type == IntervalType.HOURS && !_isCustom) ...[
+        if (!_isCustom) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [4, 6, 8, 12].map((hours) {
-              final isSelected = _value == hours;
+              final isSelected = _value == hours && _type == IntervalType.HOURS;
               return ChoiceChip(
                 label: Text(ReminderScheduleCalculator.getIntervalDisplayName(hours)),
                 selected: isSelected,
@@ -353,12 +323,16 @@ class _IntervalSelectorState extends State<IntervalSelector> {
                   decoration: InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    suffix: Text(_type == IntervalType.HOURS ? 'h' : 'd'),
+                    suffix: Text('h'),
                   ),
                   onChanged: (value) {
                     final parsed = int.tryParse(value);
                     if (parsed != null && parsed > 0) {
                       _value = parsed;
+                      // Forzamos tipo HOURS
+                      if (_type != IntervalType.HOURS) {
+                        _type = IntervalType.HOURS;
+                      }
                       widget.onChanged(_type, _value);
                     }
                   },
@@ -369,31 +343,29 @@ class _IntervalSelectorState extends State<IntervalSelector> {
         ),
         
         // Info de recordatorios por día
-        if (_type == IntervalType.HOURS) ...[
-          SizedBox(height: 8),
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.green[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.notifications_active, size: 16, color: Colors.green[700]),
-                SizedBox(width: 8),
-                Text(
-                  '${ReminderScheduleCalculator.calculateRemindersPerDay(_value)} recordatorios por día',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.green[700],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+        SizedBox(height: 8),
+        Container(
+          padding: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.green[50],
+            borderRadius: BorderRadius.circular(8),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.notifications_active, size: 16, color: Colors.green[700]),
+              SizedBox(width: 8),
+              Text(
+                '${ReminderScheduleCalculator.calculateRemindersPerDay(_value)} recordatorios por día',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -575,7 +547,11 @@ class ReminderSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final days = endDate.difference(startDate).inDays + 1;
-    final totalReminders = days * dailyTimes.length;
+    final totalReminders = ReminderScheduleCalculator.calculateTotalReminders(
+      startDate: startDate,
+      endDate: endDate,
+      dailyTimes: dailyTimes,
+    );
     final typeText = type == 'medication' ? 'Medicamento' : 'Actividad';
     final icon = type == 'medication' ? Icons.medication : Icons.directions_run;
     final color = type == 'medication' ? Colors.blue : Colors.green;

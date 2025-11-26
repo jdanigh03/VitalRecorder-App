@@ -57,9 +57,9 @@ class ReminderServiceNew {
       await _remindersCollection.doc(docId).set(reminderData);
 
       // Generar confirmaciones para todas las ocurrencias
-      await _generateConfirmations(newReminder);
+      int generatedCount = await _generateConfirmations(newReminder);
 
-      print('✅ Recordatorio creado: $docId con ${newReminder.totalOccurrences} confirmaciones');
+      print('✅ Recordatorio creado: $docId con $generatedCount confirmaciones');
       
       // Sincronizar automáticamente con la manilla si está conectada
       _syncWithBraceletSafely();
@@ -75,16 +75,25 @@ class ReminderServiceNew {
   }
 
   /// Genera todas las confirmaciones para un recordatorio
-  Future<void> _generateConfirmations(ReminderNew reminder) async {
+  Future<int> _generateConfirmations(ReminderNew reminder) async {
     try {
       final allOccurrences = reminder.calculateAllScheduledTimes();
-      print('Generando ${allOccurrences.length} confirmaciones...');
+      
+      final now = DateTime.now();
+      // Margen de tolerancia de 15 minutos para permitir marcar algo que acaba de pasar
+      final tolerance = now.subtract(Duration(minutes: 15));
+
+      // Filtrar ocurrencias válidas antes de procesar
+      final validOccurrences = allOccurrences.where((t) => !t.isBefore(tolerance)).toList();
+
+      print('Generando ${validOccurrences.length} confirmaciones...');
 
       // Batch write para mejor performance
       WriteBatch batch = _firestore.batch();
       int batchCount = 0;
+      int totalGenerated = 0;
 
-      for (final scheduledTime in allOccurrences) {
+      for (final scheduledTime in validOccurrences) {
         final confirmationId = _confirmationsCollection.doc().id;
         
         final confirmation = ReminderConfirmation(
@@ -106,6 +115,7 @@ class ReminderServiceNew {
         );
 
         batchCount++;
+        totalGenerated++;
 
         // Firestore tiene límite de 500 operaciones por batch
         if (batchCount >= 500) {
@@ -121,6 +131,7 @@ class ReminderServiceNew {
       }
 
       print('✅ Confirmaciones generadas exitosamente');
+      return totalGenerated;
     } catch (e) {
       print('❌ Error generando confirmaciones: $e');
       rethrow;
