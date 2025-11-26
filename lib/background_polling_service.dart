@@ -71,6 +71,16 @@ void callbackDispatcher() {
           // Mostrar cada notificación
           for (final doc in snapshot.docs) {
             final data = doc.data();
+            
+            // Debug
+            print("Procesando doc ${doc.id}: notified_bg=${data['notified_bg']}");
+
+            // Evitar notificar si ya fue notificada en background
+            if (data['notified_bg'] == true) {
+              print("Saltando doc ${doc.id} (ya notificado)");
+              continue;
+            }
+
             final title = data['titulo'] as String? ?? 'Notificación';
             final body = data['mensaje'] as String? ?? 'Tienes un mensaje nuevo';
             
@@ -96,9 +106,13 @@ void callbackDispatcher() {
               platformChannelSpecifics,
             );
             
-            // Marcar como 'notificada_en_fondo' para evitar spam si Workmanager corre de nuevo
-            // Nota: No marcamos 'leida' = true para que el usuario aún la vea en la UI de notificaciones dentro de la app
-            await doc.reference.update({'notified_bg': true});
+            // Marcar como 'notificada_en_fondo'
+            try {
+              await doc.reference.update({'notified_bg': true});
+              print("Marcado notified_bg=true para ${doc.id}");
+            } catch (e) {
+              print("Error actualizando notified_bg para ${doc.id}: $e");
+            }
           }
         } else {
           print("Workmanager: No hay nuevas notificaciones");

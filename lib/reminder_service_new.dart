@@ -215,9 +215,11 @@ class ReminderServiceNew {
     String? detalle
   }) async {
     try {
+      print('🔔 Iniciando notificación de evento "$accion" para recordatorio "${reminder.title}"');
       // Obtener nombre del paciente
       final userData = await _userService.getUserData(reminder.userId ?? '');
       final pacienteNombre = userData?.persona.nombres ?? 'Un paciente';
+      print('👤 Paciente identificado: $pacienteNombre (${reminder.userId})');
 
       // Enviar notificación
       await _notificationService.notificarEventoRecordatorio(
@@ -227,6 +229,7 @@ class ReminderServiceNew {
         accion: accion,
         detalle: detalle,
       );
+      print('✅ Notificación enviada al servicio');
     } catch (e) {
       print('⚠️ Error al notificar cuidadores: $e');
       // No lanzar error para no afectar la creación/edición del recordatorio
@@ -292,7 +295,7 @@ class ReminderServiceNew {
       _syncWithBraceletSafely();
 
       // Notificar evento
-      _notificarEventoPorId(reminderId, 'paused');
+      await _notificarEventoPorId(reminderId, 'paused');
       
       return true;
     } catch (e) {
@@ -349,7 +352,7 @@ class ReminderServiceNew {
       _syncWithBraceletSafely();
 
       // Notificar evento
-      _notificarEventoPorId(reminderId, 'resumed');
+      await _notificarEventoPorId(reminderId, 'resumed');
       
       return true;
     } catch (e) {
@@ -372,7 +375,7 @@ class ReminderServiceNew {
       _syncWithBraceletSafely();
 
       // Notificar evento
-      _notificarEventoPorId(reminderId, 'archived');
+      await _notificarEventoPorId(reminderId, 'archived');
       
       return true;
     } catch (e) {

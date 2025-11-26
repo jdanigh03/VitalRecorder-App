@@ -49,6 +49,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   List<ReminderNew> _todayReminders = [];
   int _invitacionesPendientes = 0;
   int _notificacionesNoLeidas = 0; // Para control de estado anterior
+  final Set<String> _processedNotificationIds = {}; // Evitar duplicados locales
 
   // Timer para verificar cumplimiento en primer plano
   Timer? _complianceTimer;
@@ -181,23 +182,26 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       final nuevasCount = notificaciones.length;
       
       // Si hay nuevas notificaciones (más que antes)
-      if (nuevasCount > _notificacionesNoLeidas && _hasInitialized) {
-        // Mostrar notificación local o snackbar solo para la última (más reciente)
-        if (notificaciones.isNotEmpty) {
-           final ultima = notificaciones.first; // Ordenado por fecha desc
-           // Verificar si es realmente reciente (ej. creada hace menos de 1 min)
-           // Para no spammear al inicio
-           
+      if (nuevasCount > 0 && _hasInitialized) {
+        // Procesar las notificaciones no leídas
+        for (final notif in notificaciones) {
+          final notifId = notif['id'];
+          if (notifId == null || _processedNotificationIds.contains(notifId)) {
+            continue;
+          }
+          
+          _processedNotificationIds.add(notifId);
+
            // Mostrar Local Notification (Banner del sistema)
            _notificationService.sendLocalNotification(
-             ultima['titulo'] ?? 'Nueva notificación', 
-             ultima['mensaje'] ?? 'Tienes un nuevo mensaje'
+             notif['titulo'] ?? 'Nueva notificación', 
+             notif['mensaje'] ?? 'Tienes un nuevo mensaje'
            );
            
            // Opcional: Mostrar SnackBar dentro de la app
            ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(ultima['mensaje'] ?? 'Nueva notificación'),
+              content: Text(notif['mensaje'] ?? 'Nueva notificación'),
               backgroundColor: Colors.blue,
               behavior: SnackBarBehavior.floating,
               action: SnackBarAction(
@@ -212,6 +216,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
               ),
             ),
           );
+
+          // Marcar como leída inmediatamente para evitar repeticiones
+          _notificationService.marcarNotificacionComoLeida(notifId);
         }
       }
       

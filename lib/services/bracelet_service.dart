@@ -95,8 +95,23 @@ class BraceletService extends ChangeNotifier {
         }
         
         if (reminder.hasOccurrencesOnDay(today)) {
-          // Agregar todas las ocurrencias del día
+          // Agregar todas las ocurrencias del día que sean FUTURAS
           for (final time in reminder.dailyScheduleTimes) {
+            final scheduledDateTime = DateTime(
+              today.year, 
+              today.month, 
+              today.day, 
+              time.hour, 
+              time.minute
+            );
+
+            // Si el recordatorio ya pasó hoy, no enviarlo a la manilla
+            // (Damos 1 minuto de gracia por si acaso)
+            if (scheduledDateTime.isBefore(now.subtract(Duration(minutes: 1)))) {
+              print("⏭️ Omitiendo recordatorio pasado para manilla: ${reminder.title} a las ${time.hour}:${time.minute}");
+              continue;
+            }
+
             todayOccurrences.add({
               'hour': time.hour,
               'minute': time.minute,
