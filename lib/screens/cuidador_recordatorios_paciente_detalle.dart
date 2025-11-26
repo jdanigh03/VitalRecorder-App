@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/user.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../services/cuidador_service.dart';
-import 'cuidador_crear_recordatorio.dart';
-import 'cuidador_reminder_detail_screen.dart';
+import '../reminder_service_new.dart';
+import 'cuidador_crear_recordatorio_new.dart';
+import 'detalle_recordatorio_new.dart';
 
 class CuidadorRecordatoriosPacienteDetalleScreen extends StatefulWidget {
   final UserModel paciente;
@@ -20,13 +21,14 @@ class CuidadorRecordatoriosPacienteDetalleScreen extends StatefulWidget {
 
 class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRecordatoriosPacienteDetalleScreen> with TickerProviderStateMixin {
   final CuidadorService _cuidadorService = CuidadorService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   late TabController _tabController;
   
   bool _isLoading = true;
-  List<Reminder> _todosLosRecordatorios = [];
-  List<Reminder> _pendientes = [];
-  List<Reminder> _completados = [];
-  List<Reminder> _vencidos = [];
+  List<ReminderNew> _todosLosRecordatorios = [];
+  List<ReminderNew> _pendientes = [];
+  List<ReminderNew> _completados = [];
+  List<ReminderNew> _vencidos = [];
   Map<String, int> _estadisticas = {};
 
   @override
@@ -48,16 +50,26 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     try {
       final recordatorios = await _cuidadorService.getRecordatoriosPaciente(widget.paciente.userId!);
       final ahora = DateTime.now();
+      final hoy = DateTime(ahora.year, ahora.month, ahora.day);
       
-      final pendientes = recordatorios.where((r) => !r.isCompleted && r.dateTime.isAfter(ahora)).toList();
-      final completados = recordatorios.where((r) => r.isCompleted).toList();
-      final vencidos = recordatorios.where((r) => !r.isCompleted && r.dateTime.isBefore(ahora)).toList();
+      // Simplificado para ReminderNew - usar isActive y fechas
+      final pendientes = recordatorios.where((r) {
+        return r.isActive && r.endDate.isAfter(ahora);
+      }).toList();
+      
+      final completados = recordatorios.where((r) {
+        return !r.isActive && r.endDate.isBefore(ahora);
+      }).toList();
+      
+      final vencidos = recordatorios.where((r) {
+        return r.isActive && r.endDate.isBefore(ahora);
+      }).toList();
       
       // Ordenar recordatorios
-      pendientes.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-      completados.sort((a, b) => b.dateTime.compareTo(a.dateTime)); // Más recientes primero
-      vencidos.sort((a, b) => b.dateTime.compareTo(a.dateTime)); // Más recientes primero
-      recordatorios.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      pendientes.sort((a, b) => a.startDate.compareTo(b.startDate));
+      completados.sort((a, b) => b.endDate.compareTo(a.endDate)); // Más recientes primero
+      vencidos.sort((a, b) => b.endDate.compareTo(a.endDate)); // Más recientes primero
+      recordatorios.sort((a, b) => a.startDate.compareTo(b.startDate));
       
       final estadisticas = {
         'total': recordatorios.length,
@@ -94,6 +106,10 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           children: [
             CircleAvatar(
@@ -150,7 +166,7 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => CuidadorCrearRecordatorioScreen(
+              builder: (context) => CuidadorCrearRecordatorioNewScreen(
                 pacienteId: widget.paciente.userId!,
                 paciente: widget.paciente,
               ),
@@ -354,7 +370,7 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     );
   }
 
-  Widget _buildRecordatoriosList(List<Reminder> recordatorios, String tipo) {
+  Widget _buildRecordatoriosList(List<ReminderNew> recordatorios, String tipo) {
     if (recordatorios.isEmpty) {
       return _buildEmptyState(tipo);
     }
@@ -435,30 +451,61 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     );
   }
 
-  Widget _buildRecordatorioCard(Reminder recordatorio, String tipo) {
+  Widget _buildRecordatorioCard(ReminderNew recordatorio, String tipo) {
     final ahora = DateTime.now();
-    final isVencido = !recordatorio.isCompleted && recordatorio.dateTime.isBefore(ahora);
-    final isPendiente = !recordatorio.isCompleted && recordatorio.dateTime.isAfter(ahora);
-    final isHoy = recordatorio.dateTime.day == ahora.day && 
-                  recordatorio.dateTime.month == ahora.month && 
-                  recordatorio.dateTime.year == ahora.year;
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+    
+    // Usar siguiente ocurrencia o rango de fechas
+    final nextOccurrence = recordatorio.getNextOccurrence();
+    final displayTime = nextOccurrence ?? recordatorio.startDate;
+    
+    final ca = recordatorio.createdAt?.toLocal();
+    final rd = DateTime(displayTime.year, displayTime.month, displayTime.day);
+    final isHoy = rd.isAtSameMomentAs(hoy);
+    
+    // Lógica simplificada para ReminderNew
+    bool isVencido = false;
+    bool isPendiente = false;
+    
+    if (recordatorio.isActive) {
+      if (nextOccurrence == null) {
+        // No hay próximas ocurrencias, el recordatorio ha finalizado
+        isVencido = recordatorio.endDate.isBefore(ahora);
+      } else if (isHoy) {
+        // Para hoy: vencido si la hora ya pasó
+        isVencido = displayTime.isBefore(ahora);
+        isPendiente = displayTime.isAfter(ahora);
+      } else if (rd.isBefore(hoy)) {
+        // Para fechas pasadas: vencido
+        isVencido = true;
+        isPendiente = false;
+      } else {
+        // Fecha futura
+        isPendiente = true;
+        isVencido = false;
+      }
+    }
 
     Color cardColor = Colors.white;
     Color borderColor = Colors.grey[300]!;
     Color iconColor = Colors.grey[600]!;
     
-    if (recordatorio.isCompleted) {
-      cardColor = Colors.green[50]!;
-      borderColor = Colors.green[200]!;
-      iconColor = Colors.green[600]!;
+    // Verificar si está pausado primero
+    if (recordatorio.isPaused) {
+      // Pausado: Gris
+      cardColor = Colors.grey[100]!;
+      borderColor = Colors.grey[400]!;
+      iconColor = Colors.grey[600]!;
     } else if (isVencido) {
+      // Vencido: Rojo
       cardColor = Colors.red[50]!;
       borderColor = Colors.red[200]!;
       iconColor = Colors.red[600]!;
-    } else if (isHoy) {
-      cardColor = Colors.blue[50]!;
-      borderColor = Colors.blue[200]!;
-      iconColor = Colors.blue[600]!;
+    } else if (isPendiente) {
+      // Pendiente: Naranja
+      cardColor = Colors.orange[50]!;
+      borderColor = Colors.orange[200]!;
+      iconColor = Colors.orange[600]!;
     }
 
     return Container(
@@ -483,7 +530,7 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => CuidadorReminderDetailScreen(
+                builder: (context) => DetalleRecordatorioNewScreen(
                   reminder: recordatorio,
                 ),
               ),
@@ -541,31 +588,30 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                           Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
                           SizedBox(width: 4),
                           Text(
-                            DateFormat('dd/MM/yyyy HH:mm').format(recordatorio.dateTime),
+                            DateFormat('dd/MM/yyyy').format(displayTime),
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          if (recordatorio.frequency != 'Una vez')
-                            Padding(
-                              padding: EdgeInsets.only(left: 12),
-                              child: Container(
-                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  recordatorio.frequency,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[700],
-                                  ),
+                          Padding(
+                            padding: EdgeInsets.only(left: 12),
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                recordatorio.intervalDisplayText,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[700],
                                 ),
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ],
@@ -574,7 +620,16 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                 SizedBox(width: 8),
                 Column(
                   children: [
-                    if (recordatorio.isCompleted)
+                    if (recordatorio.isPaused)
+                      Container(
+                        padding: EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.pause, color: Colors.grey[700], size: 16),
+                      )
+                    else if (!recordatorio.isActive)
                       Container(
                         padding: EdgeInsets.all(4),
                         decoration: BoxDecoration(
@@ -592,14 +647,14 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                         ),
                         child: Icon(Icons.warning, color: Colors.red[700], size: 16),
                       )
-                    else if (isHoy)
+                    else if (isPendiente)
                       Container(
                         padding: EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.blue[100],
+                          color: Colors.orange[100],
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.today, color: Colors.blue[700], size: 16),
+                        child: Icon(Icons.schedule, color: Colors.orange[700], size: 16),
                       ),
                     SizedBox(height: 8),
                     Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey[400]),

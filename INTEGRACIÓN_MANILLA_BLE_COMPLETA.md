@@ -134,9 +134,13 @@ manilla_Arduino/manilla_Arduino.ino (194 líneas)
 │   ├── PIN <gpio> <0|1>
 │   ├── READ <gpio>
 │   ├── STATUS
+│   ├── SYNC_TIME <timestamp>
+│   ├── REM_CLEAR
+│   ├── REM_ADD <hora:minuto> "<titulo>"
 │   └── HELP
 ├── Advertising automático
 ├── Reconexión tras desconexión
+├── Sincronización de tiempo automática
 └── LED heartbeat cuando no conectado
 ```
 
@@ -178,7 +182,8 @@ dependencies:
 ### **Conectividad BLE**
 - ✅ **Escaneo Inteligente**: Detecta automáticamente dispositivos "Vital Recorder"
 - ✅ **Conexión Robusta**: Timeout configurado, reconexión automática
-- ✅ **Estado en Tiempo Real**: UI actualizada constantemente
+- ✅ **Sincronización Automática de Tiempo**: Sincroniza hora del celular con manilla al conectar
+- ✅ **Estado en Tiempo Real**: UI actualizada constantamente
 - ✅ **Manejo de Errores**: Feedback claro para problemas de conexión
 
 ### **Control de Hardware**
@@ -345,7 +350,10 @@ LED ON          → OK LED ON
 LED OFF         → OK LED OFF  
 STATUS          → STATUS LED=1 (ON)
 PIN 2 1         → OK PIN 2 = 1
-READ 2          → OK READ 2 = 1
+read 2          → OK READ 2 = 1
+SYNC_TIME 1729012345 → OK SYNC_TIME
+REM_CLEAR       → OK REM_CLEAR
+REM_ADD 14:30 "Medicamento" → OK REM_ADD
 HELP            → [Lista de comandos]
 <invalid>       → ECHO: <invalid>
 ```

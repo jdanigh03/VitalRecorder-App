@@ -128,6 +128,88 @@ class InvitacionService {
 
   // ========== MÉTODOS PARA CUIDADORES ==========
 
+  // Enviar invitación desde cuidador a paciente
+  Future<String?> enviarInvitacionDesdeCuidador(String pacienteEmail) async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        throw Exception('Usuario no autenticado');
+      }
+
+      // Verificar que el email del paciente existe como usuario registrado con rol 'paciente'
+      final pacienteDoc = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: pacienteEmail.trim().toLowerCase())
+          .where('role', isEqualTo: 'paciente')
+          .limit(1)
+          .get();
+
+      if (pacienteDoc.docs.isEmpty) {
+        throw Exception('No existe un paciente registrado con este email');
+      }
+
+      final pacienteData = pacienteDoc.docs.first.data();
+      final pacienteId = pacienteDoc.docs.first.id;
+      final pacienteNombre = pacienteData['persona']?['nombres'] ?? 'Usuario';
+
+      // Verificar que no existe una invitación pendiente o aceptada
+      final invitacionExistente = await _verificarInvitacionExistente(
+          pacienteId, user.email!);
+      if (invitacionExistente != null) {
+        if (invitacionExistente.esPendiente) {
+          throw Exception('Ya existe una invitación pendiente con este paciente');
+        } else if (invitacionExistente.esAceptada) {
+          throw Exception('Este paciente ya te tiene asignado como cuidador');
+        }
+      }
+
+      // Obtener información del cuidador
+      final cuidadorData = await _userService.getCurrentUserData();
+      final cuidadorNombre = cuidadorData?.persona.nombres ?? user.displayName ?? 'Cuidador';
+
+      // Crear la invitación
+      final docRef = _invitacionesCollection.doc();
+      final invitacion = InvitacionCuidador(
+        id: docRef.id,
+        pacienteId: pacienteId,
+        pacienteEmail: pacienteEmail.trim().toLowerCase(),
+        pacienteNombre: pacienteNombre,
+        cuidadorEmail: user.email!.toLowerCase(),
+        cuidadorNombre: cuidadorNombre,
+        relacion: 'Cuidador', // Relación por defecto
+        telefono: null,
+        estado: EstadoInvitacion.pendiente,
+        fechaCreacion: DateTime.now(),
+        mensaje: 'Me gustaría ser tu cuidador en VitalRecorder',
+      );
+
+      await docRef.set(invitacion.toMap());
+
+      // Enviar notificación al paciente
+      await _notificationService.enviarNotificacionPushAUsuario(
+        destinatarioUserId: pacienteId,
+        titulo: '¡Nueva Solicitud de Cuidador!',
+        mensaje: '$cuidadorNombre quiere ser tu cuidador.',
+        data: {
+          'tipo': 'invitacion_cuidador',
+          'invitacion_id': invitacion.id,
+          'cuidador_nombre': cuidadorNombre,
+        },
+      );
+
+      print('=== INVITACIÓN ENVIADA DESDE CUIDADOR ===');
+      print('ID: ${invitacion.id}');
+      print('Cuidador: ${invitacion.cuidadorNombre}');
+      print('Paciente: ${invitacion.pacienteEmail}');
+      print('Estado: ${invitacion.estadoTexto}');
+
+      return docRef.id;
+    } catch (e) {
+      print('Error enviando invitación desde cuidador: $e');
+      rethrow;
+    }
+  }
+
   // Obtener invitaciones recibidas por el cuidador
   Future<List<InvitacionCuidador>> getInvitacionesRecibidas() async {
     try {

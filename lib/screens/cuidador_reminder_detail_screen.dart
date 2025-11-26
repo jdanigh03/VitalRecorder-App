@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
+import '../services/cuidador_service.dart';
 
 class CuidadorReminderDetailScreen extends StatefulWidget {
-  final Reminder reminder;
+  final ReminderNew reminder;
+  final dynamic paciente; // Puede ser UserModel o null
 
-  const CuidadorReminderDetailScreen({Key? key, required this.reminder}) : super(key: key);
+  const CuidadorReminderDetailScreen({Key? key, required this.reminder, this.paciente}) : super(key: key);
 
   @override
   State<CuidadorReminderDetailScreen> createState() => _CuidadorReminderDetailScreenState();
 }
 
 class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScreen> {
-  late Reminder _currentReminder;
+  final CuidadorService _cuidadorService = CuidadorService();
+  late ReminderNew _currentReminder;
+  bool _isLoading = false;
 
   // Formatters
-  final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy');
   final DateFormat _timeFormatter = DateFormat('HH:mm');
   final DateFormat _dayFormatter = DateFormat('EEEE d \'de\' MMMM', 'es');
 
@@ -40,6 +43,12 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
           onPressed: () => Navigator.pop(context, _currentReminder),
         ),
         actions: [
+          if (_currentReminder.isActive)
+            IconButton(
+              icon: const Icon(Icons.archive_outlined, color: Colors.white),
+              onPressed: () => _showArchiveDialog(),
+              tooltip: 'Archivar Recordatorio',
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline, color: Colors.white),
             onPressed: () => _showCuidadorInfo(),
@@ -50,7 +59,6 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header con gradiente
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -66,7 +74,6 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
               ),
               child: Column(
                 children: [
-                  // Icono grande
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: const BoxDecoration(
@@ -80,7 +87,6 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Título y descripción
                   Text(
                     _currentReminder.title,
                     style: const TextStyle(
@@ -102,8 +108,6 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
                     ),
                   ],
                   const SizedBox(height: 24),
-                  
-                  // Información para cuidadores
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -128,119 +132,25 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Este recordatorio pertenece a uno de tus pacientes asignados',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-            // Cards de información
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _buildInfoCard(
-                    'Horario',
-                    _timeFormatter.format(_currentReminder.dateTime),
-                    Icons.access_time,
-                    const Color(0xFF4A90E2),
-                  ),
+                  _buildInfoCard('Horario', _timeFormatter.format(_currentReminder.startDate), Icons.access_time, const Color(0xFF4A90E2)),
                   const SizedBox(height: 12),
-                  _buildInfoCard(
-                    'Fecha',
-                    _dayFormatter.format(_currentReminder.dateTime),
-                    Icons.calendar_today,
-                    const Color(0xFF8E44AD),
-                  ),
+                  _buildInfoCard('Fecha', _dayFormatter.format(_currentReminder.startDate), Icons.calendar_today, const Color(0xFF8E44AD)),
                   const SizedBox(height: 12),
-                  _buildInfoCard(
-                    'Frecuencia',
-                    _currentReminder.frequency,
-                    Icons.repeat,
-                    const Color(0xFFE67E22),
-                  ),
+                  _buildInfoCard('Frecuencia', _currentReminder.intervalDisplayText, Icons.repeat, const Color(0xFFE67E22)),
                   const SizedBox(height: 12),
-                  _buildInfoCard(
-                    'Tipo',
-                    _getTypeText(_currentReminder.type),
-                    _getTypeIcon(_currentReminder.type),
-                    const Color(0xFF27AE60),
-                  ),
+                  _buildInfoCard('Tipo', _getTypeText(_currentReminder.type), _getTypeIcon(_currentReminder.type), const Color(0xFF27AE60)),
                   const SizedBox(height: 12),
-                  _buildInfoCard(
-                    'Estado',
-                    _getStatusText(_currentReminder),
-                    _getStatusIcon(_currentReminder),
-                    _getStatusColor(_currentReminder),
-                  ),
-                  const SizedBox(height: 24),
-                  
-                  // Información adicional para cuidadores
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withOpacity(0.2)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: Color(0xFF4A90E2),
-                              size: 20,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Información para Cuidadores',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF1E3A5F),
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          '• Solo el paciente puede marcar este recordatorio como completado.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          '• Puedes usar esta información para hacer seguimiento y brindar apoyo.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          '• Si notas patrones de incumplimiento, considera comunicarte con el paciente.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildInfoCard('Estado', _getStatusText(_currentReminder), _getStatusIcon(_currentReminder), _getStatusColor(_currentReminder)),
                 ],
               ),
             ),
@@ -256,22 +166,13 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))],
       ),
       child: Row(
         children: [
           Container(
             padding: EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, color: color, size: 24),
           ),
           SizedBox(width: 16),
@@ -279,23 +180,9 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+                Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                 SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E3A5F),
-                  ),
-                ),
+                Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E3A5F))),
               ],
             ),
           ),
@@ -304,7 +191,6 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
     );
   }
 
-  // Métodos auxiliares para iconos y textos
   IconData _getTypeIcon(String type) {
     switch (type.toLowerCase()) {
       case 'medicación':
@@ -333,40 +219,111 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
       case 'activity':
         return 'Actividad';
       default:
-        // Si viene un tipo que no reconocemos, lo capitalizamos
-        return type.isNotEmpty 
-            ? '${type[0].toUpperCase()}${type.substring(1).toLowerCase()}'
-            : 'Recordatorio';
+        return type.isNotEmpty ? '${type[0].toUpperCase()}${type.substring(1).toLowerCase()}' : 'Recordatorio';
     }
   }
 
-  String _getStatusText(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return 'COMPLETADO';
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return 'OMITIDO';
-    } else {
-      return 'PENDIENTE';
-    }
+  String _getStatusText(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
+    if (!reminder.isActive) return 'ARCHIVADO';
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return 'FINALIZADO';
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? 'VENCIDO' : 'PENDIENTE';
   }
 
-  IconData _getStatusIcon(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Icons.check_circle;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Icons.cancel;
-    } else {
-      return Icons.schedule;
-    }
+  IconData _getStatusIcon(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Icons.pause_circle;
+    if (!reminder.isActive) return Icons.archive;
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Icons.check_circle;
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Icons.cancel : Icons.schedule;
   }
 
-  Color _getStatusColor(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Colors.green;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Colors.red;
-    } else {
-      return Colors.orange;
+  Color _getStatusColor(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Colors.grey;
+    if (!reminder.isActive) return Colors.blueGrey;
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Colors.green;
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Colors.red : Colors.orange;
+  }
+
+  void _showArchiveDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Row(children: [Icon(Icons.archive_outlined, color: Colors.blueGrey), SizedBox(width: 8), Text('Archivar Recordatorio')]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('¿Estás seguro de que deseas archivar "${_currentReminder.title}"?'),
+            const SizedBox(height: 8),
+            const Text('El recordatorio ya no aparecerá en las listas principales del paciente.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deactivateReminder();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            child: const Text('Archivar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deactivateReminder() async {
+    setState(() => _isLoading = true);
+    try {
+      final success = await _cuidadorService.desactivarRecordatorioPaciente(_currentReminder.userId!, _currentReminder.id);
+      if (success) {
+        if (mounted) {
+          setState(() {
+            _currentReminder = _currentReminder.copyWith(isActive: false);
+            _isLoading = false;
+          });
+          Navigator.pop(context, 'deactivated');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(children: [const Icon(Icons.archive, color: Colors.white), const SizedBox(width: 8), Expanded(child: Text('"${_currentReminder.title}" archivado'))]),
+              backgroundColor: Colors.blueGrey,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      } else {
+        throw Exception('No se pudo archivar el recordatorio');
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: [const Icon(Icons.error, color: Colors.white), const SizedBox(width: 8), Expanded(child: Text('Error al archivar: $e'))]),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
     }
   }
 
@@ -374,48 +331,26 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.supervisor_account, color: Color(0xFF4A90E2)),
-            SizedBox(width: 8),
-            Text('Rol de Cuidador'),
-          ],
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Row(children: [Icon(Icons.supervisor_account, color: Color(0xFF4A90E2)), SizedBox(width: 8), Text('Rol de Cuidador')]),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Como cuidador, puedes:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('Como cuidador, puedes:', style: TextStyle(fontWeight: FontWeight.bold)),
             SizedBox(height: 12),
-            Text('✓ Ver detalles de recordatorios de tus pacientes'),
+            Text('✓ Ver y archivar recordatorios de tus pacientes'),
             SizedBox(height: 8),
             Text('✓ Monitorear el cumplimiento de tratamientos'),
             SizedBox(height: 8),
             Text('✓ Identificar patrones de adherencia'),
             SizedBox(height: 16),
-            Text(
-              'Nota importante:',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange[700]),
-            ),
+            const Text('Nota importante:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
             SizedBox(height: 8),
-            Text(
-              'Solo los pacientes pueden marcar sus recordatorios como completados. Tu rol es de supervisión y apoyo.',
-              style: TextStyle(color: Colors.grey[700]),
-            ),
+            Text('Solo los pacientes pueden marcar sus recordatorios como completados.', style: TextStyle(color: Colors.grey[700])),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Entendido'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text('Entendido'))],
       ),
     );
   }

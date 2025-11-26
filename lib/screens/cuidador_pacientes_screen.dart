@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import '../services/cuidador_service.dart';
+import 'payments/paywall_beneficios_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/invitacion_service.dart';
 import '../models/user.dart';
 import 'invitaciones_cuidador.dart';
 import 'cuidador_recordatorios_paciente_detalle.dart';
 import '../models/invitacion_cuidador.dart';
 import '../widgets/dashboard_widgets.dart';
+import 'cuidador_dashboard.dart';
+import 'cuidador_recordatorios_screen.dart';
+import 'cuidador_calendario_paciente.dart';
+import 'ajustes.dart';
 
 class CuidadorPacientesScreen extends StatefulWidget {
   @override
@@ -13,6 +19,8 @@ class CuidadorPacientesScreen extends StatefulWidget {
 }
 
 class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
+  int _additionalSlots = 0;
+  int _defaultLimit = 2;
   final CuidadorService _cuidadorService = CuidadorService();
   final InvitacionService _invitacionService = InvitacionService();
   final TextEditingController _searchController = TextEditingController();
@@ -25,8 +33,26 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLimit();
     _loadPatients();
     _loadInvitations();
+  }
+
+  Future<void> _loadLimit() async {
+    try {
+      // Lee slots del usuario actual
+      // users/{uid}.additional_patient_slots y max_patients_default
+      // Usamos CuidadorService.currentUser y Firestore directo para evitar más dependencias
+      final svc = _cuidadorService;
+      final uid = svc.currentUser?.uid;
+      if (uid == null) return;
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data() ?? {};
+      setState(() {
+        _additionalSlots = (data['additional_patient_slots'] ?? 0) as int;
+        _defaultLimit = (data['max_patients_default'] ?? 2) as int;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -86,6 +112,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         elevation: 0,
         title: Row(
           children: [
@@ -116,7 +143,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '${_filteredPatients.length} pacientes asignados',
+'${_filteredPatients.length} pacientes asignados (límite ${_defaultLimit + _additionalSlots})',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -136,6 +163,86 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         ],
       ),
       body: _isLoading ? _buildLoadingView() : _buildPatientsContent(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showInvitePatientDialog,
+        backgroundColor: const Color(0xFF4A90E2),
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text(
+          'Añadir Paciente',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 4,
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: 1,
+          onTap: (i) {
+            if (i == 0) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CuidadorDashboard()),
+              );
+              return;
+            }
+            if (i == 1) return; // Pacientes
+            if (i == 2) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CuidadorRecordatoriosScreen()),
+              );
+              return;
+            }
+            if (i == 3) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AjustesScreen()),
+              );
+              return;
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: const Color(0xFF4A90E2),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          elevation: 0,
+          backgroundColor: Colors.white,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_outlined),
+              activeIcon: Icon(Icons.dashboard),
+              label: 'Dashboard',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline),
+              activeIcon: Icon(Icons.people),
+              label: 'Pacientes',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_outlined),
+              activeIcon: Icon(Icons.history),
+              label: 'Recordatorios',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              activeIcon: Icon(Icons.settings),
+              label: 'Ajustes',
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -232,6 +339,86 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     ),
                     filled: true,
                     fillColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E3A5F), Color(0xFF2D5082)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1E3A5F).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.group_add, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Capacidad de Pacientes',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_filteredPatients.length} / ${_defaultLimit + _additionalSlots} ocupados',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
+                    );
+                    await _loadLimit();
+                    await _loadPatients();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF4A90E2),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Añadir cupo',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -442,6 +629,16 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                   ),
                 ),
                 PopupMenuItem(
+                  value: 'calendar',
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_month, size: 18, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('Calendario'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
                   value: 'stats',
                   child: Row(
                     children: [
@@ -477,6 +674,9 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         break;
       case 'reminders':
         _showPatientReminders(patient);
+        break;
+      case 'calendar':
+        _showPatientCalendar(patient);
         break;
       case 'stats':
         _showPatientStats(patient);
@@ -549,6 +749,17 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => CuidadorRecordatoriosPacienteDetalleScreen(
+          paciente: patient,
+        ),
+      ),
+    );
+  }
+
+  void _showPatientCalendar(UserModel patient) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CuidadorCalendarioPacienteScreen(
           paciente: patient,
         ),
       ),
@@ -822,5 +1033,225 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         ),
       ),
     );
+  }
+
+  void _showInvitePatientDialog() {
+    final emailController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.person_add, color: Color(0xFF4A90E2)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Invitar Paciente',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ingresa el email del paciente que deseas agregar:',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[700],
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                hintText: 'paciente@ejemplo.com',
+                prefixIcon: Icon(Icons.email, color: Color(0xFF4A90E2)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Color(0xFF4A90E2), width: 2),
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'El paciente recibirá una invitación para aceptarte como cuidador',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Por favor ingresa un email'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              
+              if (!_isValidEmail(email)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Por favor ingresa un email válido'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              
+              // Verificar límite de pacientes
+              final currentCount = _pacientes.length;
+              final maxAllowed = _defaultLimit + _additionalSlots;
+              
+              if (currentCount >= maxAllowed) {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Row(
+                      children: [
+                        Icon(Icons.lock, color: Colors.orange),
+                        SizedBox(width: 12),
+                        Expanded(child: Text('Límite alcanzado')),
+                      ],
+                    ),
+                    content: Text(
+                      'Has alcanzado el límite de $maxAllowed pacientes. Desbloquea más cupos para continuar.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
+                          );
+                          await _loadLimit();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        child: Text('Desbloquear cupos'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.pop(context);
+              
+              // Mostrar loading
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => Center(
+                  child: Container(
+                    padding: EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                        SizedBox(height: 16),
+                        Text('Enviando invitación...'),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+              
+              try {
+                // Enviar invitación
+                await _invitacionService.enviarInvitacionDesdeCuidador(email);
+                
+                Navigator.pop(context); // Cerrar loading
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.white),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text('✅ Invitación enviada a $email'),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              } catch (e) {
+                Navigator.pop(context); // Cerrar loading
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error: $e'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Enviar Invitación'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
 }

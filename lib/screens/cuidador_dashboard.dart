@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert'; // Para JSON
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/notification_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
 import '../services/cuidador_service.dart';
 import '../services/invitacion_service.dart';
+import '../reminder_service_new.dart';
 import 'cuidador_pacientes_screen.dart';
 import 'cuidador_recordatorios_screen.dart';
 import 'cuidador_reportes_screen.dart';
@@ -13,6 +21,8 @@ import 'cuidador_pacientes_recordatorios.dart';
 import 'invitaciones_cuidador.dart';
 import 'ajustes.dart';
 import 'auth_wrapper.dart';
+import '../widgets/global_reminder_indicator.dart';
+import 'detalle_recordatorio_new.dart'; // Importar detalle
 
 class CuidadorDashboard extends StatefulWidget {
   const CuidadorDashboard({Key? key}) : super(key: key);
@@ -31,11 +41,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   final CuidadorService _cuidadorService = CuidadorService();
   final UserService _userService = UserService();
   final InvitacionService _invitacionService = InvitacionService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
+  final NotificationService _notificationService = NotificationService();
   
   // Datos
   UserModel? _currentUserData;
-  List<Reminder> _todayReminders = [];
+  List<ReminderNew> _todayReminders = [];
   int _invitacionesPendientes = 0;
+  int _notificacionesNoLeidas = 0; // Para control de estado anterior
+  final Set<String> _processedNotificationIds = {}; // Evitar duplicados locales
+
+  // Timer para verificar cumplimiento en primer plano
+  Timer? _complianceTimer;
+  StreamSubscription? _notificationClickSubscription;
 
   @override
   void initState() {
@@ -43,11 +61,178 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     WidgetsBinding.instance.addObserver(this);
     _hasInitialized = false;
     _loadUserData();
+    _setupNotificacionesStream();
+    
+    // Iniciar monitoreo de cumplimiento en primer plano (cada 1 minuto)
+    _complianceTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      _checkComplianceForeground();
+    });
+
+    // Escuchar clics en notificaciones
+    _notificationClickSubscription = NotificationService.onNotificationClick.stream.listen((payload) {
+      if (payload != null && mounted) {
+        _handleNotificationClick(payload);
+      }
+    });
+  }
+  
+  Future<void> _handleNotificationClick(String payload) async {
+    try {
+      final data = jsonDecode(payload);
+      if (data['reminderId'] != null) {
+        // Mostrar loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Center(child: CircularProgressIndicator()),
+        );
+
+        final reminder = await _reminderService.getReminderById(data['reminderId']);
+        
+        Navigator.pop(context); // Cerrar loading
+        
+        if (reminder != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error manejando clic de notificación: $e');
+    }
+  }
+  
+  // Verificar cumplimiento mientras la app está abierta
+  Future<void> _checkComplianceForeground() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final toleranceStr = prefs.getString('caregiver_compliance_tolerance');
+      
+      if (toleranceStr == null) return; // No hay alerta configurada
+      
+      int toleranceMinutes = 15;
+      if (toleranceStr.contains('1 minuto')) toleranceMinutes = 1;
+      else if (toleranceStr.contains('3 minutos')) toleranceMinutes = 3;
+      else if (toleranceStr.contains('5 minutos')) toleranceMinutes = 5;
+      else if (toleranceStr.contains('10 minutos')) toleranceMinutes = 10;
+      else if (toleranceStr.contains('15 minutos')) toleranceMinutes = 15;
+      
+      final now = DateTime.now();
+      final toleranceTime = now.subtract(Duration(minutes: toleranceMinutes));
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      
+      // Obtener pacientes
+      final pacientes = await _cuidadorService.getPacientes();
+      if (pacientes.isEmpty) return;
+      
+      for (final paciente in pacientes) {
+        // Buscar confirmaciones pendientes y atrasadas
+        final snapshot = await FirebaseFirestore.instance
+            .collection('reminder_confirmations')
+            .where('userId', isEqualTo: paciente.userId)
+            .where('status', isEqualTo: 'PENDING')
+            .where('scheduledTime', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+            .where('scheduledTime', isLessThan: Timestamp.fromDate(toleranceTime))
+            .get();
+            
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          if (data.containsKey('notified_missed_alert') && data['notified_missed_alert'] == true) {
+            continue;
+          }
+          
+          // Obtener info del recordatorio
+          final reminderId = data['reminderId'];
+          String title = 'Recordatorio';
+          final reminder = await _reminderService.getReminderById(reminderId);
+          if (reminder != null) title = reminder.title;
+          
+          // Payload para navegación
+          final payload = jsonEncode({
+            'reminderId': reminderId,
+            'pacienteId': paciente.userId,
+            'type': 'missed_alert'
+          });
+          
+          // Notificar con payload
+          _notificationService.sendLocalNotification(
+            '⚠️ Alerta de Incumplimiento',
+            '${paciente.persona.nombres} no ha confirmado: $title',
+            payload: payload
+          );
+          
+          // Marcar como notificado
+          await doc.reference.update({'notified_missed_alert': true});
+        }
+      }
+    } catch (e) {
+      print('Error verificando cumplimiento en primer plano: $e');
+    }
+  }
+
+  // Escuchar notificaciones en tiempo real (Foreground)
+  void _setupNotificacionesStream() {
+    _notificationService.getNotificacionesPendientes().listen((notificaciones) {
+      if (!mounted) return;
+
+      // Calcular cuántas son nuevas
+      final nuevasCount = notificaciones.length;
+      
+      // Si hay nuevas notificaciones (más que antes)
+      if (nuevasCount > 0 && _hasInitialized) {
+        // Procesar las notificaciones no leídas
+        for (final notif in notificaciones) {
+          final notifId = notif['id'];
+          if (notifId == null || _processedNotificationIds.contains(notifId)) {
+            continue;
+          }
+          
+          _processedNotificationIds.add(notifId);
+
+           // Mostrar Local Notification (Banner del sistema)
+           _notificationService.sendLocalNotification(
+             notif['titulo'] ?? 'Nueva notificación', 
+             notif['mensaje'] ?? 'Tienes un nuevo mensaje'
+           );
+           
+           // Opcional: Mostrar SnackBar dentro de la app
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(notif['mensaje'] ?? 'Nueva notificación'),
+              backgroundColor: Colors.blue,
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Ver',
+                textColor: Colors.white,
+                onPressed: () {
+                   Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => NotificacionesScreen()),
+                  );
+                },
+              ),
+            ),
+          );
+
+          // Marcar como leída inmediatamente para evitar repeticiones
+          _notificationService.marcarNotificacionComoLeida(notifId);
+        }
+      }
+      
+      setState(() {
+        _notificacionesNoLeidas = nuevasCount;
+      });
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _complianceTimer?.cancel();
+    _notificationClickSubscription?.cancel();
     super.dispose();
   }
 
@@ -119,11 +304,13 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       print('Email: $userEmail');
       print('Nombre: $_cuidadorName');
       
-      // Cargar recordatorios de hoy de pacientes asignados
-      await _loadTodayRemindersFromPatients();
+      // Cargar recordatorios relevantes de pacientes asignados
+      await _loadRelevantRemindersFromPatients();
       
       // Cargar invitaciones pendientes
       await _loadInvitacionesPendientes();
+      
+      if (!mounted) return;
       
       setState(() {
         _isLoading = false;
@@ -131,6 +318,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       });
     } catch (e) {
       print('Error cargando datos del cuidador: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _cuidadorName = 'Cuidador';
@@ -138,29 +326,66 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     }
   }
 
-  Future<void> _loadTodayRemindersFromPatients() async {
+  Future<void> _loadRelevantRemindersFromPatients() async {
     try {
-      // Obtener recordatorios de hoy de todos los pacientes asignados
-      final todayReminders = await _cuidadorService.getTodayRemindersFromAllPatients();
+      print('=== CARGANDO RECORDATORIOS (NUEVO SISTEMA) ===');
       
-      // Filtrar recordatorios de hoy y ordenar por hora
       final now = DateTime.now();
-      _todayReminders = todayReminders.where((r) {
-        return r.dateTime.day == now.day &&
-            r.dateTime.month == now.month &&
-            r.dateTime.year == now.year;
-      }).toList();
+      final today = DateTime(now.year, now.month, now.day);
       
-      // Ordenar por hora
-      _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      // Verificar si el usuario actual tiene pacientes asignados
+      final pacientesAsignados = await _cuidadorService.getPacientes();
       
-      print('=== RECORDATORIOS DE PACIENTES HOY ===');
-      print('Total recordatorios hoy: ${_todayReminders.length}');
-      for (final reminder in _todayReminders) {
-        print('- ${reminder.title} a las ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
+      List<ReminderNew> relevantReminders = [];
+      
+      if (pacientesAsignados.isNotEmpty) {
+        // Si es cuidador: obtener recordatorios de todos los pacientes
+        print('Usuario es CUIDADOR - Cargando recordatorios de ${pacientesAsignados.length} pacientes');
+        
+        for (final paciente in pacientesAsignados) {
+          final reminders = await _reminderService.getRemindersByPatient(paciente.userId!);
+          
+          // Filtrar solo recordatorios con ocurrencias hoy
+          for (final reminder in reminders) {
+            if (reminder.hasOccurrencesOnDay(today)) {
+              relevantReminders.add(reminder);
+            }
+          }
+        }
+      } else {
+        // Si es paciente: obtener sus propios recordatorios
+        print('Usuario es PACIENTE - Cargando recordatorios propios');
+        final allReminders = await _reminderService.getAllReminders();
+        
+        // Filtrar recordatorios con ocurrencias hoy
+        relevantReminders = allReminders.where((r) {
+          return r.hasOccurrencesOnDay(today);
+        }).toList();
+        
+        print('=== DEBUG FILTRO PACIENTE ===');
+        print('Total recordatorios en BD: ${allReminders.length}');
+        print('Recordatorios relevantes filtrados: ${relevantReminders.length}');
+        for (final reminder in relevantReminders) {
+          print('✅ ${reminder.title} - ${reminder.intervalDisplayText}');
+        }
       }
+      
+      // Ordenar por próxima ocurrencia
+      relevantReminders.sort((a, b) {
+        final nextA = a.getNextOccurrence();
+        final nextB = b.getNextOccurrence();
+        if (nextA == null) return 1;
+        if (nextB == null) return -1;
+        return nextA.compareTo(nextB);
+      });
+      
+      _todayReminders = relevantReminders;
+      
+      print('=== RESULTADO FINAL ===');
+      print('Total recordatorios mostrados: ${_todayReminders.length}');
+      
     } catch (e) {
-      print('Error cargando recordatorios de pacientes: $e');
+      print('Error cargando recordatorios: $e');
       _todayReminders = [];
     }
   }
@@ -255,7 +480,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     }
   }
 
-  void _marcarComoCompletado(Reminder reminder) async {
+  void _marcarComoCompletado(ReminderNew reminder) async {
     try {
       // No podemos marcar recordatorios de pacientes como completados
       // Esto debe ser hecho por el paciente directamente
@@ -288,13 +513,15 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     // Usar _todayReminders que ya viene filtrado y ordenado
     final todayReminders = _todayReminders;
 
-    final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
-    final completedCount = todayReminders.where((r) => r.isCompleted).length;
+    // TODO: Implementar conteo basado en confirmaciones
+    final pendingCount = todayReminders.length;
+    final completedCount = 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         elevation: 0,
         title: Row(
           children: [
@@ -387,11 +614,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+                    MaterialPageRoute(builder: (context) => NotificacionesScreen()),
                   );
                 },
               ),
-              if (pendingCount > 0)
+              if (_notificacionesNoLeidas > 0)
                 Positioned(
                   right: 8,
                   top: 8,
@@ -406,7 +633,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                       minHeight: 18,
                     ),
                     child: Text(
-                      '$pendingCount',
+                      '$_notificacionesNoLeidas',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 10,
@@ -417,15 +644,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ),
                 ),
             ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AjustesScreen()),
-              );
-            },
           ),
         ],
       ),
@@ -471,10 +689,10 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     const SizedBox(height: 8),
                     Text(
                       todayReminders.isEmpty
-                          ? 'No hay recordatorios de pacientes hoy'
+                          ? 'No hay recordatorios pendientes'
                           : pendingCount == 0
                               ? '¡Todos los recordatorios completados!'
-                              : 'Pacientes: $pendingCount ${pendingCount == 1 ? 'recordatorio' : 'recordatorios'}',
+                              : 'Pacientes: $pendingCount ${pendingCount == 1 ? 'pendiente' : 'pendientes'}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -509,6 +727,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ],
                 ),
               ),
+              
+              // Indicador global de recordatorio de manilla
+              GlobalReminderIndicator(),
 
               // Contenido principal
               Padding(
@@ -516,32 +737,33 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                color: Color(0xFF1E3A5F),
-                                size: 24,
-                              ),
-                              SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  'Recordatorios de Pacientes',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E3A5F),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              color: Color(0xFF1E3A5F),
+                              size: 24,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Recordatorios Pendientes',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E3A5F),
                                 ),
+                                maxLines: 2,
+                                softWrap: true,
+                                overflow: TextOverflow.visible,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                        SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -815,8 +1037,39 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+  Widget _buildReminderCard(ReminderNew reminder) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    // Usar siguiente ocurrencia o primera ocurrencia del día
+    final nextOccurrence = reminder.getNextOccurrence();
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    final displayTime = nextOccurrence ?? (todayOccurrences.isNotEmpty ? todayOccurrences.first : DateTime.now());
+    
+    final ca = reminder.createdAt?.toLocal();
+    final rd = DateTime(displayTime.year, displayTime.month, displayTime.day);
+    final isToday = rd.isAtSameMomentAs(today);
+    
+    // Lógica corregida: TODO - implementar verificación con confirmaciones
+    bool isVencido = false;
+    bool isPendiente = true;
+    
+    if (isToday) {
+      // Para hoy: vencido si la hora ya pasó
+      isVencido = displayTime.isBefore(now);
+      isPendiente = displayTime.isAfter(now);
+    } else if (rd.isBefore(today)) {
+      // Para fechas pasadas: vencido
+      isVencido = true;
+      isPendiente = false;
+    } else {
+      // Fecha futura
+      isPendiente = true;
+      isVencido = false;
+    }
+    
+    // Para mantener compatibilidad con el código existente
+    final isPast = isVencido;
     
     return GestureDetector(
       onTap: () {
@@ -825,15 +1078,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: reminder.isPaused 
+              ? Colors.grey.withOpacity(0.1)
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
+            color: reminder.isPaused
+                ? Colors.grey.withOpacity(0.5)
+                : isVencido 
+                    ? Colors.red.withOpacity(0.3)
+                    : isPendiente
+                        ? Colors.orange.withOpacity(0.3)
+                        : Colors.transparent,
+            width: reminder.isPaused || isVencido || isPendiente ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -886,30 +1143,48 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Nombre del paciente
+                        FutureBuilder<String>(
+                          future: _getPatientName(reminder.userId ?? ''),
+                          builder: (context, snapshot) {
+                            final patientName = snapshot.data ?? 'Paciente';
+                            return Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Color(0xFF4A90E2).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '👤 $patientName',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
                         Text(
                           reminder.title,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          reminder.description,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
+                        if (reminder.description.isNotEmpty)
+                          Text(
+                            reminder.description,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
@@ -921,15 +1196,23 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 Icon(
                                   Icons.access_time, 
                                   size: 14, 
-                                  color: isPast ? Colors.red : Colors.grey[500],
+                                  color: isVencido 
+                                      ? Colors.red 
+                                      : isPendiente 
+                                          ? Colors.orange 
+                                          : Colors.grey[500],
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  '${displayTime.hour}:${displayTime.minute.toString().padLeft(2, '0')}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: isPast ? Colors.red : Color(0xFF4A90E2),
+                                    color: isVencido 
+                                        ? Colors.red 
+                                        : isPendiente 
+                                            ? Colors.orange 
+                                            : Color(0xFF4A90E2),
                                   ),
                                 ),
                               ],
@@ -940,7 +1223,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  reminder.frequency,
+                                  reminder.intervalDisplayText,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -954,38 +1237,53 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                     ),
                   ),
 
-                  // Botón de acción o estado - adaptado para cuidador
+                  // Botón de confirmación
                   const SizedBox(width: 8),
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: reminder.isCompleted 
-                          ? Colors.green.withOpacity(0.1)
-                          : isPast 
-                              ? Colors.red.withOpacity(0.1)
-                              : Colors.orange.withOpacity(0.1),
-                      shape: BoxShape.circle,
+                  ElevatedButton(
+                    onPressed: () => _confirmarRecordatorio(reminder, displayTime),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: Icon(
-                      reminder.isCompleted 
-                          ? Icons.check_circle
-                          : isPast 
-                              ? Icons.error
-                              : Icons.schedule,
-                      color: reminder.isCompleted 
-                          ? Colors.green
-                          : isPast 
-                              ? Colors.red
-                              : Colors.orange,
-                      size: 32,
-                    ),
+                    child: Icon(Icons.check, size: 20),
                   ),
                 ],
               ),
             ),
             
-            // Indicador de estado omitido
-            if (isPast)
+            // Indicador de estado
+            if (reminder.isPaused)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'Pausado',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (isVencido)
               Positioned(
                 top: 8,
                 left: 8,
@@ -997,6 +1295,26 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                   ),
                   child: Text(
                     'Omitido',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              )
+            else if (isPendiente)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Pendiente',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,
@@ -1027,6 +1345,19 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     
     return '$dayName, $day de $month de $year';
   }
+  
+  Future<String> _getPatientName(String userId) async {
+    try {
+      final pacientes = await _cuidadorService.getPacientes();
+      final paciente = pacientes.firstWhere(
+        (p) => p.userId == userId,
+        orElse: () => throw Exception('Paciente no encontrado'),
+      );
+      return paciente.persona.nombres;
+    } catch (e) {
+      return 'Paciente';
+    }
+  }
 
 
 
@@ -1034,30 +1365,295 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
 
 
-  void _showReminderDetails(Reminder reminder) {
+  void _confirmarRecordatorio(ReminderNew reminder, DateTime scheduledTime) async {
+    final now = DateTime.now();
+    final difference = now.difference(scheduledTime);
+    final minutesLate = difference.inMinutes;
+    
+    String mensaje;
+    if (minutesLate < 0) {
+      // Aún no es la hora
+      final minutesEarly = minutesLate.abs();
+      mensaje = 'Faltan $minutesEarly minutos para la hora programada.';
+    } else if (minutesLate == 0) {
+      mensaje = '¡Perfecto! Estás a tiempo.';
+    } else if (minutesLate < 60) {
+      mensaje = 'Llevas $minutesLate minutos de retraso.';
+    } else {
+      final hours = minutesLate ~/ 60;
+      final minutes = minutesLate % 60;
+      if (minutes == 0) {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} de retraso.';
+      } else {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} y $minutes minutos de retraso.';
+      }
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(reminder.title),
+        title: Row(
+          children: [
+            Icon(
+              minutesLate <= 0 ? Icons.check_circle : Icons.access_time,
+              color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Confirmar Recordatorio'),
+            ),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Descripción: ${reminder.description}'),
-            SizedBox(height: 8),
-            Text('Tipo: ${reminder.type}'),
-            SizedBox(height: 8),
-            Text('Fecha: ${reminder.dateTime.toString()}'),
-            SizedBox(height: 8),
-            Text('Estado: ${reminder.isCompleted ? 'Completado' : 'Pendiente'}'),
+            Text(
+              reminder.title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red)).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Hora programada: ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    mensaje,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: minutesLate <= 5 ? Colors.green[700] : (minutesLate <= 15 ? Colors.orange[700] : Colors.red[700]),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '¿Deseas confirmar este recordatorio?',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              final success = await _reminderService.confirmReminder(
+                reminderId: reminder.id,
+                scheduledTime: scheduledTime,
+              );
+              
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Recordatorio confirmado'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                _loadUserData();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error al confirmar'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Confirmar'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showReminderDetails(ReminderNew reminder) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    
+    // Obtener confirmaciones existentes
+    final confirmations = await _reminderService.getConfirmations(reminder.id);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(reminder.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Descripción: ${reminder.description}'),
+                SizedBox(height: 8),
+                Text('Tipo: ${reminder.type}'),
+                SizedBox(height: 8),
+                Text('Rango: ${reminder.dateRangeText}'),
+                SizedBox(height: 8),
+                Text('Intervalo: ${reminder.intervalDisplayText}'),
+                SizedBox(height: 16),
+                Divider(),
+                SizedBox(height: 8),
+                Text(
+                  'Horarios de hoy:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                ...todayOccurrences.map((occurrence) {
+                  // Buscar si ya está confirmada esta ocurrencia
+                  final confirmation = confirmations.cast<ReminderConfirmation?>().firstWhere(
+                    (c) => 
+                      c!.scheduledTime.year == occurrence.year &&
+                      c.scheduledTime.month == occurrence.month &&
+                      c.scheduledTime.day == occurrence.day &&
+                      c.scheduledTime.hour == occurrence.hour &&
+                      c.scheduledTime.minute == occurrence.minute,
+                    orElse: () => null,
+                  );
+                  
+                  final isConfirmed = confirmation != null && 
+                      confirmation.status.toString() == 'ConfirmationStatus.CONFIRMED';
+                  
+                  final timeStr = '${occurrence.hour}:${occurrence.minute.toString().padLeft(2, '0')}';
+                  final isPast = occurrence.isBefore(now);
+                  
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isConfirmed 
+                          ? Colors.green.withOpacity(0.1)
+                          : isPast
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isConfirmed 
+                            ? Colors.green
+                            : isPast
+                                ? Colors.red
+                                : Colors.orange,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isConfirmed 
+                              ? Icons.check_circle
+                              : isPast
+                                  ? Icons.error
+                                  : Icons.schedule,
+                          color: isConfirmed 
+                              ? Colors.green
+                              : isPast
+                                  ? Colors.red
+                                  : Colors.orange,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (isConfirmed && confirmation != null && confirmation.confirmedAt != null)
+                                Text(
+                                  'Confirmado a las ${confirmation.confirmedAt!.hour}:${confirmation.confirmedAt!.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (!isConfirmed)
+                          ElevatedButton(
+                            onPressed: () async {
+                              final success = await _reminderService.confirmReminder(
+                                reminderId: reminder.id,
+                                scheduledTime: occurrence,
+                              );
+                              
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Recordatorio confirmado'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                // Cerrar diálogo y recargar
+                                Navigator.pop(context);
+                                _loadUserData();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Error al confirmar'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            child: Text('Confirmar'),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
+          ],
+        ),
       ),
     );
   }

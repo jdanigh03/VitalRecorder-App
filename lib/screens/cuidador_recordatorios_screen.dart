@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/cuidador_service.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
 import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
-import 'cuidador_reminder_detail_screen.dart';
-import 'cuidador_crear_recordatorio.dart';
+import 'detalle_recordatorio_new.dart';
+import 'cuidador_crear_recordatorio_new.dart';
 import 'cuidador_pacientes_recordatorios.dart';
+import 'cuidador_dashboard.dart';
+import 'ajustes.dart';
 
 class CuidadorRecordatoriosScreen extends StatefulWidget {
   @override
@@ -18,14 +20,14 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   late TabController _tabController;
   
   bool _isLoading = true;
-  List<Reminder> _allReminders = [];
-  List<Reminder> _filteredReminders = [];
+  List<ReminderNew> _allReminders = [];
+  List<ReminderNew> _filteredReminders = [];
   String _searchQuery = '';
   String _selectedFilter = 'Todos';
   String _selectedStatus = 'Todos';
 
   final List<String> _filterOptions = ['Todos', 'Medicación', 'Tarea', 'Cita'];
-  final List<String> _statusOptions = ['Todos', 'Pendientes', 'Completados', 'Vencidos'];
+  final List<String> _statusOptions = ['Todos', 'Pendientes', 'Completados', 'Vencidos', 'Pausados'];
 
   @override
   void initState() {
@@ -62,7 +64,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   void _applyFilters() {
-    List<Reminder> filtered = List.from(_allReminders);
+    List<ReminderNew> filtered = List.from(_allReminders);
     
     // Filtrar por búsqueda
     if (_searchQuery.isNotEmpty) {
@@ -77,18 +79,26 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       filtered = filtered.where((reminder) => reminder.type == _selectedFilter).toList();
     }
     
-    // Filtrar por estado
+    // Filtrar por estado (simplificado - usar recordatorios activos)
     if (_selectedStatus != 'Todos') {
       final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
       switch (_selectedStatus) {
         case 'Pendientes':
-          filtered = filtered.where((r) => !r.isCompleted && r.dateTime.isAfter(now)).toList();
+          // Mostrar recordatorios activos no pausados con ocurrencias
+          filtered = filtered.where((r) => 
+            !r.isPaused && (r.hasOccurrencesOnDay(today) || r.startDate.isAfter(today))
+          ).toList();
+          break;
+        case 'Pausados':
+          // Mostrar solo recordatorios pausados
+          filtered = filtered.where((r) => r.isPaused).toList();
           break;
         case 'Completados':
-          filtered = filtered.where((r) => r.isCompleted).toList();
-          break;
         case 'Vencidos':
-          filtered = filtered.where((r) => !r.isCompleted && r.dateTime.isBefore(now)).toList();
+          // Estos estados requieren consultar confirmaciones individualmente
+          // Por simplicidad, mostrar todos para estos filtros
           break;
       }
     }
@@ -104,6 +114,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
+        automaticallyImplyLeading: false,
         elevation: 0,
         title: Row(
           children: [
@@ -184,6 +195,73 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
           ),
         ),
         elevation: 4,
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: 2,
+          onTap: (i) {
+            if (i == 0) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CuidadorDashboard()),
+              );
+              return;
+            }
+            if (i == 1) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CuidadorPacientesRecordatoriosScreen()),
+              );
+              return;
+            }
+            if (i == 2) return; // Recordatorios
+            if (i == 3) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AjustesScreen()),
+              );
+              return;
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: const Color(0xFF4A90E2),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          elevation: 0,
+          backgroundColor: Colors.white,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_outlined),
+              activeIcon: Icon(Icons.dashboard),
+              label: 'Dashboard',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline),
+              activeIcon: Icon(Icons.people),
+              label: 'Pacientes',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_outlined),
+              activeIcon: Icon(Icons.history),
+              label: 'Recordatorios',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              activeIcon: Icon(Icons.settings),
+              label: 'Ajustes',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -284,9 +362,10 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
 
   Widget _buildQuickStats() {
     final total = _allReminders.length;
-    final completed = _allReminders.where((r) => r.isCompleted).length;
-    final pending = _allReminders.where((r) => !r.isCompleted).length;
-    final overdue = _allReminders.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+    // Estadísticas simplificadas - requieren consultar confirmaciones
+    final completed = 0; // TODO: implementar con confirmaciones
+    final pending = _allReminders.where((r) => r.isActive).length;
+    final overdue = 0; // TODO: implementar con confirmaciones
 
     return Container(
       padding: EdgeInsets.all(16),
@@ -362,9 +441,11 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   }
 
   Widget _buildRecordatoriosContent() {
-    final pendingCount = _allReminders.where((r) => !r.isCompleted).length;
-    final completedCount = _allReminders.where((r) => r.isCompleted).length;
-    final overdueCount = _allReminders.where((r) => !r.isCompleted && r.dateTime.isBefore(DateTime.now())).length;
+    // Estadísticas simplificadas - requieren consultar confirmaciones
+    final pendingCount = _allReminders.where((r) => r.isActive).length;
+    final completedCount = 0; // TODO: implementar con confirmaciones
+    final now = DateTime.now();
+    final overdueCount = 0; // TODO: implementar con confirmaciones
     
     return RefreshIndicator(
       onRefresh: _loadAllReminders,
@@ -679,8 +760,9 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+  Widget _buildReminderCard(ReminderNew reminder) {
+    final now = DateTime.now();
+    final isPast = reminder.endDate.isBefore(now);
     
     return GestureDetector(
       onTap: () {
@@ -689,15 +771,17 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: reminder.isPaused
+              ? Colors.grey.withOpacity(0.1)
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
+            color: reminder.isPaused
+                ? Colors.grey.withOpacity(0.5)
+                : isPast 
+                    ? Colors.red.withOpacity(0.3) 
                     : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
+            width: reminder.isPaused || isPast ? 2 : 0,
           ),
           boxShadow: [
             BoxShadow(
@@ -756,9 +840,6 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -768,9 +849,6 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -789,7 +867,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  reminder.dateRangeText,
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -804,7 +882,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                                 Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  reminder.frequency,
+                                  reminder.intervalDisplayText,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -823,24 +901,30 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                   Container(
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: reminder.isCompleted 
-                          ? Colors.green.withOpacity(0.1)
+                      color: reminder.isPaused
+                          ? Colors.grey.withOpacity(0.1)
                           : isPast 
                               ? Colors.red.withOpacity(0.1)
-                              : Colors.orange.withOpacity(0.1),
+                              : reminder.isActive
+                                  ? Colors.green.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      reminder.isCompleted 
-                          ? Icons.check_circle
+                      reminder.isPaused
+                          ? Icons.pause_circle
                           : isPast 
                               ? Icons.error
-                              : Icons.schedule,
-                      color: reminder.isCompleted 
-                          ? Colors.green
+                              : reminder.isActive
+                                  ? Icons.schedule
+                                  : Icons.check_circle,
+                      color: reminder.isPaused
+                          ? Colors.grey
                           : isPast 
                               ? Colors.red
-                              : Colors.orange,
+                              : reminder.isActive
+                                  ? Colors.orange
+                                  : Colors.grey,
                       size: 24,
                     ),
                   ),
@@ -848,8 +932,35 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
               ),
             ),
             
-            // Indicador de estado omitido
-            if (isPast)
+            // Indicador de estado
+            if (reminder.isPaused)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'Pausado',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (isPast)
               Positioned(
                 top: 8,
                 left: 8,
@@ -904,32 +1015,30 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     );
   }
 
-  List<Reminder> _getTodayReminders() {
+  List<ReminderNew> _getTodayReminders() {
     final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    final today = DateTime(now.year, now.month, now.day);
     
     return _filteredReminders.where((reminder) {
-      final reminderDate = reminder.dateTime;
-      return reminderDate.isAfter(startOfDay) && reminderDate.isBefore(endOfDay);
+      return reminder.hasOccurrencesOnDay(today);
     }).toList();
   }
 
-  List<Reminder> _getUpcomingReminders() {
+  List<ReminderNew> _getUpcomingReminders() {
     final now = DateTime.now();
     return _filteredReminders.where((reminder) {
-      return !reminder.isCompleted && reminder.dateTime.isAfter(now);
+      return reminder.startDate.isAfter(now);
     }).toList();
   }
 
-  List<Reminder> _getOverdueReminders() {
+  List<ReminderNew> _getOverdueReminders() {
     final now = DateTime.now();
     return _filteredReminders.where((reminder) {
-      return !reminder.isCompleted && reminder.dateTime.isBefore(now);
+      return reminder.endDate.isBefore(now);
     }).toList();
   }
 
-  Widget _buildRemindersList(List<Reminder> reminders) {
+  Widget _buildRemindersList(List<ReminderNew> reminders) {
     if (reminders.isEmpty) {
       return Center(
         child: EmptyStateCard(
@@ -957,32 +1066,17 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
         itemCount: reminders.length,
         itemBuilder: (context, index) {
           final reminder = reminders[index];
-          return Card(
-            elevation: 2,
-            margin: EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ReminderListTile(
-              title: reminder.title,
-              subtitle: reminder.description,
-              dateTime: reminder.dateTime,
-              isCompleted: reminder.isCompleted,
-              type: reminder.type,
-              onTap: () => _showReminderDetails(reminder),
-            ),
-          );
+          return _buildReminderCard(reminder);
         },
       ),
     );
   }
 
-  void _showReminderDetails(Reminder reminder) {
-    // Usar la misma pantalla que el paciente pero con funcionalidades limitadas para el cuidador
+  void _showReminderDetails(ReminderNew reminder) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CuidadorReminderDetailScreen(reminder: reminder),
+        builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
       ),
     );
   }
@@ -1014,7 +1108,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     );
   }
 
-  void _toggleReminderStatus(Reminder reminder) {
+  void _toggleReminderStatus(ReminderNew reminder) {
     // Aquí implementarías la lógica para cambiar el estado del recordatorio
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1026,7 +1120,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     _loadAllReminders();
   }
 
-  void _editReminder(Reminder reminder) {
+  void _editReminder(ReminderNew reminder) {
     // Esta función necesitaría el pacienteId que no está disponible aquí
     // Por ahora, mostrar mensaje de que no se puede editar desde esta pantalla
     Navigator.pop(context);
@@ -1220,7 +1314,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => CuidadorCrearRecordatorioScreen(
+                        builder: (context) => CuidadorCrearRecordatorioNewScreen(
                           pacienteId: paciente.userId!,
                           paciente: paciente,
                         ),

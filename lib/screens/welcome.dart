@@ -1,21 +1,26 @@
 // ========================================
 // ARCHIVO: lib/screens/welcome.dart
 // ========================================
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
-import '../models/reminder.dart';
+import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../models/user.dart';
 import '../services/user_service.dart';
-import '../services/reminder_service.dart';
+import '../reminder_service_new.dart';
 import '../services/bracelet_service.dart';
+import '../services/calendar_service.dart';
+import '../services/notification_service.dart';
 import '../models/bracelet_device.dart';
-import 'agregar_recordatorio.dart';
-import 'detalle_recordatorio.dart';
+import 'agregar_recordatorio_new.dart';
+import 'detalle_recordatorio_new.dart';
 import 'historial.dart';
 import 'calendario.dart';
 import 'asignar_cuidador.dart';
 import 'ajustes.dart';
 import 'perfil_usuario.dart';
+import 'paciente_reportes_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -30,14 +35,21 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   bool _isLoading = true;
   bool _hasInitialized = false;
   
+  // Variables para selección múltiple
+  bool _isMultiSelectMode = false;
+  Set<String> _selectedReminderIds = <String>{};
+  
   // Servicios de Firebase
   final UserService _userService = UserService();
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   final BraceletService _braceletService = BraceletService();
+  final CalendarService _calendarService = CalendarService();
+  final NotificationService _notificationService = NotificationService();
   
   // Datos del usuario
   UserModel? _currentUserData;
-  List<Reminder> _todayReminders = [];
+  List<ReminderNew> _todayReminders = [];
+  Timer? _checkMissedTimer;
 
   @override
   void initState() {
@@ -45,11 +57,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     _hasInitialized = false;
     _loadUserData();
+    
+    // Iniciar timer para verificar recordatorios omitidos cada minuto
+    _checkMissedTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      _reminderService.checkMissedReminders();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _checkMissedTimer?.cancel();
     super.dispose();
   }
 
@@ -101,12 +119,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
       // Cargar recordatorios de hoy
       await _loadTodayReminders();
       
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _hasInitialized = true;
       });
     } catch (e) {
       print('Error cargando datos del usuario: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _userName = 'Usuario';
@@ -116,26 +136,31 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
 
   Future<void> _loadTodayReminders() async {
     try {
+      print('=== CARGANDO RECORDATORIOS (NUEVO SISTEMA) ===');
       final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      final today = DateTime(now.year, now.month, now.day);
       
-      final allReminders = await _reminderService.getRemindersForDateRange(startOfDay, endOfDay);
+      // Obtener todos los recordatorios activos
+      final allReminders = await _reminderService.getAllReminders();
+      print('Recordatorios activos encontrados: ${allReminders.length}');
       
-      // Filtrar recordatorios de hoy y ordenar por hora
-      _todayReminders = allReminders.where((r) {
-        return r.dateTime.day == now.day &&
-            r.dateTime.month == now.month &&
-            r.dateTime.year == now.year;
-      }).toList();
+      List<ReminderNew> relevantReminders = [];
       
-      // Ordenar por hora
-      _todayReminders.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      // Para cada recordatorio, obtener ocurrencias de hoy y pendientes
+      for (final reminder in allReminders) {
+        // Verificar si tiene ocurrencias hoy
+        if (reminder.hasOccurrencesOnDay(today)) {
+          relevantReminders.add(reminder);
+          print('✅ ${reminder.title} - Activo hoy');
+        }
+      }
       
-      print('=== RECORDATORIOS DE HOY CARGADOS ===');
-      print('Total recordatorios hoy: ${_todayReminders.length}');
+      _todayReminders = relevantReminders;
+      
+      print('=== RECORDATORIOS CARGADOS ===');
+      print('Total recordatorios relevantes: ${_todayReminders.length}');
       for (final reminder in _todayReminders) {
-        print('- ${reminder.title} a las ${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}');
+        print('- ${reminder.title} - ${reminder.intervalDisplayText}');
       }
     } catch (e) {
       print('Error cargando recordatorios: $e');
@@ -146,59 +171,55 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   void _onItemTapped(int index) {
     if (index == _selectedIndex) return;
     
+    if (!mounted) return;
     setState(() {
       _selectedIndex = index;
     });
 
     switch (index) {
+      case 0:
+        // Ya estamos en Inicio
+        break;
       case 1:
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const AsignarCuidadorScreen()),
-        ).then((_) {
-          setState(() => _selectedIndex = 0);
-          _loadUserData();
-        });
+        );
         break;
       case 2:
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const CalendarioScreen()),
-        ).then((_) {
-          setState(() => _selectedIndex = 0);
-          _loadUserData();
-        });
+          MaterialPageRoute(builder: (context) => const HistorialScreen()),
+        );
         break;
       case 3:
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const AjustesScreen()),
-        ).then((_) {
-          setState(() => _selectedIndex = 0);
-          _loadUserData();
-        });
+        );
         break;
     }
   }
 
-  void _marcarComoCompletado(Reminder reminder) async {
+  void _marcarComoCompletado(ReminderNew reminder, DateTime scheduledTime) async {
     try {
-      // Actualizar en Firebase
-      final success = await _reminderService.markAsCompleted(reminder.id, true);
+      final now = DateTime.now();
+      
+      // Confirmar ocurrencia específica
+      final success = await _reminderService.confirmReminder(
+        reminderId: reminder.id,
+        scheduledTime: scheduledTime,
+      );
       
       if (success) {
-        // Actualizar estado local
-        setState(() {
-          final index = _todayReminders.indexWhere((r) => r.id == reminder.id);
-          if (index != -1) {
-            _todayReminders[index] = reminder.copyWith(isCompleted: true);
-          }
-        });
+        // Recargar la lista de recordatorios para reflejar cambios
+        await _loadTodayReminders();
+        setState(() {});
         
         // Enviar notificación a la manilla si está conectada
         _sendBraceletNotification(reminder);
       } else {
-        throw Exception('No se pudo actualizar en Firebase');
+        throw Exception('No se pudo marcar como completado');
       }
     } catch (e) {
       print('Error marcando recordatorio como completado: $e');
@@ -245,7 +266,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     );
   }
 
-  Future<void> _sendBraceletNotification(Reminder reminder) async {
+  Future<void> _sendBraceletNotification(ReminderNew reminder) async {
     try {
       // Solo enviar si hay una manilla conectada
       if (!_braceletService.isConnected) {
@@ -282,108 +303,249 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     }
   }
 
+  // === FUNCIONES DE SELECCIÓN MÚTIPLE ===
+  
+  void _startMultiSelect(String reminderId) {
+    setState(() {
+      _isMultiSelectMode = true;
+      _selectedReminderIds.add(reminderId);
+    });
+  }
+  
+  void _toggleSelection(String reminderId) {
+    setState(() {
+      if (_selectedReminderIds.contains(reminderId)) {
+        _selectedReminderIds.remove(reminderId);
+        // Si no hay más seleccionados, salir del modo
+        if (_selectedReminderIds.isEmpty) {
+          _isMultiSelectMode = false;
+        }
+      } else {
+        _selectedReminderIds.add(reminderId);
+      }
+    });
+  }
+  
+  void _cancelMultiSelect() {
+    setState(() {
+      _isMultiSelectMode = false;
+      _selectedReminderIds.clear();
+    });
+  }
+  
+  void _selectAll() {
+    setState(() {
+      _selectedReminderIds = _todayReminders.map((r) => r.id).toSet();
+    });
+  }
+  
+  Future<void> _completeMultipleReminders() async {
+    if (_selectedReminderIds.isEmpty) return;
+    
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      int completedCount = 0;
+      
+      for (final reminderId in _selectedReminderIds) {
+        final reminder = _todayReminders.firstWhere((r) => r.id == reminderId);
+        // Usar startDate en lugar de dateTime
+        final reminderDate = DateTime(reminder.startDate.year, reminder.startDate.month, reminder.startDate.day);
+        final completionDate = reminderDate.isBefore(today) ? reminderDate : today;
+        
+        final success = await _calendarService.markReminderCompleted(reminder.id, completionDate);
+        if (success) {
+          completedCount++;
+        }
+      }
+      
+      // Salir del modo selección
+      _cancelMultiSelect();
+      
+      // Recargar la lista
+      await _loadTodayReminders();
+      setState(() {});
+      
+      // Mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('¡$completedCount recordatorios completados!'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+    } catch (e) {
+      print('Error completando múltiples recordatorios: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al completar recordatorios'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Usar _todayReminders que ya viene filtrado y ordenado desde Firebase
     final todayReminders = _todayReminders;
 
-    final pendingCount = todayReminders.where((r) => !r.isCompleted).length;
-    final completedCount = todayReminders.where((r) => r.isCompleted).length;
+    // Los contadores se calculan diferente ahora:
+    // - Pendientes: recordatorios que aparecen en la lista (ya filtrados para mostrar solo no completados)
+    // - Completados: no los mostramos en la lista, pero podrían estar completados hoy
+    final pendingCount = todayReminders.length; // Todos los que aparecen son pendientes
+    final completedCount = 0; // No mostramos completados en esta vista
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
         elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: CircleAvatar(
-                backgroundColor: Colors.white24,
-                radius: 18,
-                child: Icon(Icons.person, color: Colors.white, size: 20),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Bienvenido',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    _userName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                onPressed: () {
+        // AppBar diferente para modo selección
+        title: _isMultiSelectMode
+            ? Text(
+                '${_selectedReminderIds.length} seleccionados',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              )
+            : GestureDetector(
+                onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+                    MaterialPageRoute(builder: (context) => const PerfilUsuarioScreen()),
                   );
                 },
-              ),
-              if (pendingCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '$pendingCount',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
-                      textAlign: TextAlign.center,
+                      child: CircleAvatar(
+                        backgroundColor: Colors.white24,
+                        radius: 18,
+                        child: Icon(Icons.person, color: Colors.white, size: 20),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Bienvenido',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            _userName.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AjustesScreen()),
-              );
-            },
-          ),
-        ],
+              ),
+        // Botones de acción diferentes según el modo
+        actions: _isMultiSelectMode
+            ? [
+                // Botón seleccionar todos
+                IconButton(
+                  icon: Icon(
+                    _selectedReminderIds.length == _todayReminders.length
+                        ? Icons.deselect
+                        : Icons.select_all,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    if (_selectedReminderIds.length == _todayReminders.length) {
+                      _cancelMultiSelect();
+                    } else {
+                      _selectAll();
+                    }
+                  },
+                  tooltip: _selectedReminderIds.length == _todayReminders.length
+                      ? 'Deseleccionar todo'
+                      : 'Seleccionar todo',
+                ),
+                // Botón completar seleccionados
+                IconButton(
+                  icon: Icon(Icons.check_circle, color: Colors.green),
+                  onPressed: _selectedReminderIds.isEmpty
+                      ? null
+                      : _completeMultipleReminders,
+                  tooltip: 'Completar seleccionados',
+                ),
+                // Botón cancelar
+                IconButton(
+                  icon: Icon(Icons.close, color: Colors.white),
+                  onPressed: _cancelMultiSelect,
+                  tooltip: 'Cancelar',
+                ),
+              ]
+            : [
+                Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const NotificacionesScreen()),
+                        );
+                      },
+                    ),
+                    if (pendingCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            '$pendingCount',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -427,10 +589,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     const SizedBox(height: 8),
                     Text(
                       todayReminders.isEmpty
-                          ? 'No tienes recordatorios hoy'
+                          ? 'No tienes recordatorios pendientes'
                           : pendingCount == 0
-                              ? '¡Todos los recordatorios completados!'
-                              : 'Tienes $pendingCount ${pendingCount == 1 ? 'recordatorio' : 'recordatorios'}',
+                              ? '¡Todos los recordatorios al día!'
+                              : 'Tienes $pendingCount ${pendingCount == 1 ? 'recordatorio pendiente' : 'recordatorios pendientes'}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -489,7 +651,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                               SizedBox(width: 8),
                               Flexible(
                                 child: Text(
-                                  'Recordatorios de Hoy',
+                                  'Recordatorios Actuales',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
@@ -508,12 +670,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => const CalendarioScreen(),
+                                    builder: (context) => PacienteReportesScreen(),
                                   ),
                                 );
                               },
-                              icon: Icon(Icons.file_download, size: 18),
-                              label: Text('Exportar'),
+                              icon: Icon(Icons.analytics, size: 18),
+                              label: Text('Reportes'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                               ),
@@ -555,13 +717,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const AgregarRecordatorioScreen(),
+              builder: (context) => AgregarRecordatorioNewScreen(),
             ),
           );
+          _loadUserData(); // Recargar después de agregar
         },
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.add, color: Colors.white),
@@ -709,7 +872,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
             ),
             const SizedBox(height: 24),
             Text(
-              'No hay recordatorios para hoy',
+              'No hay recordatorios pendientes',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -719,7 +882,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
             ),
             const SizedBox(height: 8),
             Text(
-              '¡Perfecto! Disfruta tu día libre',
+              '¡Excelente! Todo al día',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -732,7 +895,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const AgregarRecordatorioScreen(),
+                    builder: (context) => AgregarRecordatorioNewScreen(),
                   ),
                 );
               },
@@ -753,30 +916,54 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
-    final isPast = reminder.dateTime.isBefore(DateTime.now()) && !reminder.isCompleted;
+  Widget _buildReminderCard(ReminderNew reminder) {
+    final now = DateTime.now();
+    final nextOccurrence = reminder.getNextOccurrence();
+    final isSelected = _selectedReminderIds.contains(reminder.id);
+    
+    // Mostrar próxima ocurrencia o última si no hay próxima
+    final displayTime = nextOccurrence ?? DateTime.now();
+    final isPast = nextOccurrence == null || nextOccurrence.isBefore(now);
     
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
-          ),
-        );
+      onTap: () async {
+        if (_isMultiSelectMode) {
+          _toggleSelection(reminder.id);
+        } else {
+          // Navegar a detalles del recordatorio
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
+            ),
+          );
+          // Recargar recordatorios al regresar
+          _loadTodayReminders();
+        }
+      },
+      onLongPress: () {
+        if (!_isMultiSelectMode) {
+          _startMultiSelect(reminder.id);
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSelected 
+              ? Colors.blue.withOpacity(0.1) 
+              : reminder.isPaused
+                  ? Colors.grey.withOpacity(0.1)
+                  : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isPast 
-                ? Colors.red.withOpacity(0.3) 
-                : reminder.isCompleted 
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.transparent,
-            width: isPast || reminder.isCompleted ? 2 : 0,
+            color: isSelected
+                ? Colors.blue
+                : reminder.isPaused
+                    ? Colors.grey.withOpacity(0.5)
+                    : isPast
+                        ? Colors.red.withOpacity(0.3)
+                        : Colors.orange.withOpacity(0.3),
+            width: 2,
           ),
           boxShadow: [
             BoxShadow(
@@ -792,7 +979,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Icono del tipo
+                  if (_isMultiSelectMode) ...[
+                    Checkbox(
+                      value: isSelected,
+                      onChanged: (value) => _toggleSelection(reminder.id),
+                      activeColor: Colors.blue,
+                      shape: CircleBorder(),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -823,8 +1018,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     ),
                   ),
                   const SizedBox(width: 16),
-
-                  // Información del recordatorio
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -835,9 +1028,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1E3A5F),
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -847,11 +1037,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[600],
-                            decoration: reminder.isCompleted 
-                                ? TextDecoration.lineThrough 
-                                : null,
                           ),
                           overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                         const SizedBox(height: 8),
                         Wrap(
@@ -864,15 +1052,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Icon(
                                   Icons.access_time, 
                                   size: 14, 
-                                  color: isPast ? Colors.red : Colors.grey[500],
+                                  color: isPast ? Colors.red : Colors.orange,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${reminder.dateTime.hour}:${reminder.dateTime.minute.toString().padLeft(2, '0')}',
+                                  '${displayTime.hour}:${displayTime.minute.toString().padLeft(2, '0')}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: isPast ? Colors.red : Color(0xFF4A90E2),
+                                    color: isPast ? Colors.red : Colors.orange,
                                   ),
                                 ),
                               ],
@@ -883,7 +1071,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                                 Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  reminder.frequency,
+                                  reminder.intervalDisplayText,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -896,74 +1084,64 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                       ],
                     ),
                   ),
-
-                  // Botón de acción
-                  const SizedBox(width: 8),
-                  if (!reminder.isCompleted)
+                  if (!_isMultiSelectMode) ...[
+                    const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed: () => _marcarComoCompletado(reminder),
+                      onPressed: reminder.isPaused 
+                          ? null 
+                          : () => _confirmarRecordatorio(reminder, displayTime),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: reminder.isPaused ? Colors.grey : Colors.green,
                         foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        elevation: 2,
+                        disabledBackgroundColor: Colors.grey[300],
+                        disabledForegroundColor: Colors.grey[500],
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check, size: 18),
-                          SizedBox(width: 4),
-                          Text(
-                            'Confirmar',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                        size: 32,
-                      ),
+                      child: Icon(reminder.isPaused ? Icons.pause : Icons.check, size: 20),
                     ),
+                  ],
                 ],
               ),
             ),
-            
-            // Indicador de estado omitido
-            if (isPast)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Omitido',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: reminder.isPaused 
+                      ? Colors.grey 
+                      : isPast 
+                          ? Colors.red 
+                          : Colors.orange,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (reminder.isPaused)
+                      Icon(Icons.pause, color: Colors.white, size: 12),
+                    if (reminder.isPaused)
+                      SizedBox(width: 4),
+                    Text(
+                      reminder.isPaused 
+                          ? 'Pausado' 
+                          : isPast 
+                              ? 'Vencido' 
+                              : 'Pendiente',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -1067,5 +1245,298 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
     final year = date.year;
     
     return '$dayName, $day de $month de $year';
+  }
+
+  void _confirmarRecordatorio(ReminderNew reminder, DateTime scheduledTime) async {
+    final now = DateTime.now();
+    final difference = now.difference(scheduledTime);
+    final minutesLate = difference.inMinutes;
+    
+    String mensaje;
+    if (minutesLate < 0) {
+      // Aún no es la hora
+      final minutesEarly = minutesLate.abs();
+      mensaje = 'Faltan $minutesEarly minutos para la hora programada.';
+    } else if (minutesLate == 0) {
+      mensaje = '¡Perfecto! Estás a tiempo.';
+    } else if (minutesLate < 60) {
+      mensaje = 'Llevas $minutesLate minutos de retraso.';
+    } else {
+      final hours = minutesLate ~/ 60;
+      final minutes = minutesLate % 60;
+      if (minutes == 0) {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} de retraso.';
+      } else {
+        mensaje = 'Llevas $hours ${hours == 1 ? "hora" : "horas"} y $minutes minutos de retraso.';
+      }
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              minutesLate <= 0 ? Icons.check_circle : Icons.access_time,
+              color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Confirmar Recordatorio'),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              reminder.title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red)).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: minutesLate <= 5 ? Colors.green : (minutesLate <= 15 ? Colors.orange : Colors.red),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Hora programada: ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    mensaje,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: minutesLate <= 5 ? Colors.green[700] : (minutesLate <= 15 ? Colors.orange[700] : Colors.red[700]),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '¿Deseas confirmar este recordatorio?',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              final success = await _reminderService.confirmReminder(
+                reminderId: reminder.id,
+                scheduledTime: scheduledTime,
+              );
+              
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Recordatorio confirmado'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                _loadUserData();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ Error al confirmar'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReminderDetails(ReminderNew reminder) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayOccurrences = reminder.calculateOccurrencesForDay(today);
+    
+    // Obtener confirmaciones existentes
+    final confirmations = await _reminderService.getConfirmations(reminder.id);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(reminder.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Descripción: ${reminder.description}'),
+                SizedBox(height: 8),
+                Text('Tipo: ${reminder.type}'),
+                SizedBox(height: 8),
+                Text('Rango: ${reminder.dateRangeText}'),
+                SizedBox(height: 8),
+                Text('Intervalo: ${reminder.intervalDisplayText}'),
+                SizedBox(height: 16),
+                Divider(),
+                SizedBox(height: 8),
+                Text(
+                  'Horarios de hoy:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                SizedBox(height: 12),
+                ...todayOccurrences.map((occurrence) {
+                  // Buscar si ya está confirmada esta ocurrencia
+                  final confirmation = confirmations.cast<ReminderConfirmation?>().firstWhere(
+                    (c) => 
+                      c!.scheduledTime.year == occurrence.year &&
+                      c.scheduledTime.month == occurrence.month &&
+                      c.scheduledTime.day == occurrence.day &&
+                      c.scheduledTime.hour == occurrence.hour &&
+                      c.scheduledTime.minute == occurrence.minute,
+                    orElse: () => null,
+                  );
+                  
+                  final isConfirmed = confirmation != null && 
+                      confirmation.status.toString() == 'ConfirmationStatus.CONFIRMED';
+                  
+                  final timeStr = '${occurrence.hour}:${occurrence.minute.toString().padLeft(2, '0')}';
+                  final isPast = occurrence.isBefore(now);
+                  
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isConfirmed 
+                          ? Colors.green.withOpacity(0.1)
+                          : isPast
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isConfirmed 
+                            ? Colors.green
+                            : isPast
+                                ? Colors.red
+                                : Colors.orange,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isConfirmed 
+                              ? Icons.check_circle
+                              : isPast
+                                  ? Icons.error
+                                  : Icons.schedule,
+                          color: isConfirmed 
+                              ? Colors.green
+                              : isPast
+                                  ? Colors.red
+                                  : Colors.orange,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (isConfirmed && confirmation != null && confirmation.confirmedAt != null)
+                                Text(
+                                  'Confirmado a las ${confirmation.confirmedAt!.hour}:${confirmation.confirmedAt!.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (!isConfirmed)
+                          ElevatedButton(
+                            onPressed: () async {
+                              final success = await _reminderService.confirmReminder(
+                                reminderId: reminder.id,
+                                scheduledTime: occurrence,
+                              );
+                              
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Recordatorio confirmado'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                // Cerrar diálogo y recargar
+                                Navigator.pop(context);
+                                _loadUserData();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Error al confirmar'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            child: Text('Confirmar'),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

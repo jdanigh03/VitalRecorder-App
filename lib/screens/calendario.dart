@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
-import '../models/reminder.dart';
-import '../services/reminder_service.dart';
+import '../models/reminder_new.dart';
+import '../reminder_service_new.dart';
 import '../utils/export_utils.dart';
-import 'detalle_recordatorio.dart';
-import 'agregar_recordatorio.dart';
+import 'detalle_recordatorio_new.dart';
+import 'agregar_recordatorio_new.dart';
 
 class CalendarioScreen extends StatefulWidget {
   const CalendarioScreen({Key? key}) : super(key: key);
@@ -17,14 +17,14 @@ class CalendarioScreen extends StatefulWidget {
 class _CalendarioScreenState extends State<CalendarioScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
-  final ReminderService _reminderService = ReminderService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
   
-  List<Reminder> _allReminders = [];
-  List<Reminder> _filteredReminders = [];
+  List<ReminderNew> _allReminders = [];
+  List<ReminderNew> _filteredReminders = [];
   String? _selectedMedicament;
   bool _isLoading = true;
 
@@ -93,40 +93,44 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     });
   }
 
-  List<Reminder> _getRemindersForDay(DateTime day) {
+  List<ReminderNew> _getRemindersForDay(DateTime day) {
+    // Usar el nuevo método para verificar ocurrencias
     return _filteredReminders.where((reminder) {
-      return isSameDay(reminder.dateTime, day);
-    }).toList()..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      return reminder.hasOccurrencesOnDay(day);
+    }).toList()..sort((a, b) => a.startDate.compareTo(b.startDate));
   }
 
-  Color _getReminderStatusColor(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Colors.green;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Colors.red;
-    } else {
-      return Colors.orange;
-    }
+  Color _getReminderStatusColor(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Colors.grey;
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Colors.grey; // Finalizado
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Colors.red : Colors.orange;
   }
 
-  IconData _getReminderStatusIcon(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return Icons.check_circle;
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return Icons.cancel;
-    } else {
-      return Icons.access_time;
-    }
+  IconData _getReminderStatusIcon(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return Icons.pause;
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return Icons.check_circle; // Finalizado
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? Icons.cancel : Icons.access_time;
   }
 
-  String _getReminderStatusText(Reminder reminder) {
-    if (reminder.isCompleted) {
-      return 'COMPLETADO';
-    } else if (reminder.dateTime.isBefore(DateTime.now())) {
-      return 'OMITIDO';
-    } else {
-      return 'PENDIENTE';
-    }
+  String _getReminderStatusText(ReminderNew reminder) {
+    // Verificar si está pausado primero
+    if (reminder.isPaused) return 'PAUSADO';
+    
+    final nextOccurrence = reminder.getNextOccurrence();
+    if (nextOccurrence == null) return 'FINALIZADO';
+    
+    final now = DateTime.now();
+    return nextOccurrence.isBefore(now) ? 'VENCIDO' : 'PENDIENTE';
   }
 
   IconData _getTypeIcon(String type) {
@@ -154,6 +158,10 @@ class _CalendarioScreenState extends State<CalendarioScreen>
         title: const Text(
           'Calendario',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
         actions: [
           // Filtro dropdown
@@ -218,7 +226,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const AgregarRecordatorioScreen(),
+              builder: (context) => AgregarRecordatorioNewScreen(),
             ),
           );
           _loadReminders(); // Recargar después de agregar
@@ -319,7 +327,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
       children: [
         Container(
           color: Colors.white,
-          child: TableCalendar<Reminder>(
+          child: TableCalendar<ReminderNew>(
             firstDay: DateTime.now().subtract(const Duration(days: 365)),
             lastDay: DateTime.now().add(const Duration(days: 365)),
             focusedDay: _focusedDay,
@@ -373,7 +381,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
       children: [
         Container(
           color: Colors.white,
-          child: TableCalendar<Reminder>(
+          child: TableCalendar<ReminderNew>(
             firstDay: DateTime.now().subtract(const Duration(days: 365)),
             lastDay: DateTime.now().add(const Duration(days: 365)),
             focusedDay: _focusedDay,
@@ -432,7 +440,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     );
   }
 
-  Widget _buildRemindersList(List<Reminder> reminders) {
+  Widget _buildRemindersList(List<ReminderNew> reminders) {
     if (reminders.isEmpty) {
       return Center(
         child: Column(
@@ -469,19 +477,21 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
+  Widget _buildReminderCard(ReminderNew reminder) {
     final statusColor = _getReminderStatusColor(reminder);
     final statusIcon = _getReminderStatusIcon(reminder);
     
     return GestureDetector(
       onTap: () async {
-        await Navigator.push(
+        final result = await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => DetalleRecordatorioScreen(reminder: reminder),
+            builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
           ),
         );
-        _loadReminders(); // Recargar después de ver detalles
+        if (result != null) {
+          _loadReminders(); // Recargar después de ver detalles
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -554,7 +564,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _timeFormatter.format(reminder.dateTime),
+                        _timeFormatter.format(reminder.startDate),
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -568,7 +578,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        reminder.frequency,
+                        reminder.intervalDisplayText,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -633,8 +643,8 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     try {
       // Filtrar recordatorios por el período seleccionado
       final filteredByDate = _filteredReminders.where((reminder) {
-        return reminder.dateTime.isAfter(startDate.subtract(const Duration(days: 1))) &&
-               reminder.dateTime.isBefore(endDate.add(const Duration(days: 1)));
+        return reminder.startDate.isBefore(endDate.add(const Duration(days: 1))) &&
+               reminder.endDate.isAfter(startDate.subtract(const Duration(days: 1)));
       }).toList();
 
       if (format == 'PDF') {
@@ -679,7 +689,7 @@ class _ExportBottomSheet extends StatefulWidget {
     required DateTime startDate,
     required DateTime endDate,
   }) onExport;
-  final List<Reminder> reminders;
+  final List<ReminderNew> reminders;
 
   const _ExportBottomSheet({
     required this.onExport,
