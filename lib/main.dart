@@ -32,9 +32,11 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Inicializar el servicio de notificaciones
+  // Inicializar el servicio de notificaciones (no bloquear app si falla o tarda por falta de internet)
   final NotificationService notificationService = NotificationService();
-  await notificationService.initNotifications();
+  notificationService.initNotifications().catchError((e) {
+    print('Error inicializando notificaciones: $e');
+  });
   
   // Inicializar servicio BLE en segundo plano
   try {
