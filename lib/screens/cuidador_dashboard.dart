@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert'; // Para JSON
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,6 +22,7 @@ import 'invitaciones_cuidador.dart';
 import 'ajustes.dart';
 import 'auth_wrapper.dart';
 import '../widgets/global_reminder_indicator.dart';
+import 'detalle_recordatorio_new.dart'; // Importar detalle
 
 class CuidadorDashboard extends StatefulWidget {
   const CuidadorDashboard({Key? key}) : super(key: key);
@@ -50,6 +52,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
 
   // Timer para verificar cumplimiento en primer plano
   Timer? _complianceTimer;
+  StreamSubscription? _notificationClickSubscription;
 
   @override
   void initState() {
@@ -63,6 +66,42 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     _complianceTimer = Timer.periodic(Duration(minutes: 1), (timer) {
       _checkComplianceForeground();
     });
+
+    // Escuchar clics en notificaciones
+    _notificationClickSubscription = NotificationService.onNotificationClick.stream.listen((payload) {
+      if (payload != null && mounted) {
+        _handleNotificationClick(payload);
+      }
+    });
+  }
+  
+  Future<void> _handleNotificationClick(String payload) async {
+    try {
+      final data = jsonDecode(payload);
+      if (data['reminderId'] != null) {
+        // Mostrar loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Center(child: CircularProgressIndicator()),
+        );
+
+        final reminder = await _reminderService.getReminderById(data['reminderId']);
+        
+        Navigator.pop(context); // Cerrar loading
+        
+        if (reminder != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error manejando clic de notificación: $e');
+    }
   }
   
   // Verificar cumplimiento mientras la app está abierta
@@ -110,10 +149,18 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
           final reminder = await _reminderService.getReminderById(reminderId);
           if (reminder != null) title = reminder.title;
           
-          // Notificar
+          // Payload para navegación
+          final payload = jsonEncode({
+            'reminderId': reminderId,
+            'pacienteId': paciente.userId,
+            'type': 'missed_alert'
+          });
+          
+          // Notificar con payload
           _notificationService.sendLocalNotification(
             '⚠️ Alerta de Incumplimiento',
-            '${paciente.persona.nombres} no ha confirmado: $title'
+            '${paciente.persona.nombres} no ha confirmado: $title',
+            payload: payload
           );
           
           // Marcar como notificado
@@ -178,6 +225,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _complianceTimer?.cancel();
+    _notificationClickSubscription?.cancel();
     super.dispose();
   }
 

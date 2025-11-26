@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 
 class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
@@ -32,6 +33,8 @@ class NotificationService {
     }
   }
 
+  static final StreamController<String?> onNotificationClick = StreamController<String?>.broadcast();
+
   Future<void> initNotifications() async {
     // Solicitar permiso para recibir notificaciones
     await _firebaseMessaging.requestPermission();
@@ -54,17 +57,29 @@ class NotificationService {
     // Inicializar el plugin de notificaciones locales
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    const InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
-    await _flutterLocalNotificationsPlugin.initialize(initializationSettings);
+        
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+        );
+        
+    await _flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.payload != null) {
+          print('Notificación tocada con payload: ${response.payload}');
+          onNotificationClick.add(response.payload);
+        }
+      },
+    );
 
     // Manejar mensajes de Firebase en primer plano
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('Got a message whilst in the foreground!');
-      print('Message data: \${message.data}');
+      print('Message data: ${message.data}');
 
       if (message.notification != null) {
-        print('Message also contained a notification: \${message.notification}');
+        print('Message also contained a notification: ${message.notification}');
         showLocalNotification(message);
       }
     });
@@ -89,11 +104,12 @@ class NotificationService {
             icon: '@mipmap/ic_launcher',
           ),
         ),
+        payload: jsonEncode(message.data),
       );
     }
   }
 
-  Future<void> sendLocalNotification(String title, String body) async {
+  Future<void> sendLocalNotification(String title, String body, {String? payload}) async {
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
       'local_channel',
@@ -106,10 +122,11 @@ class NotificationService {
     const NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
     await _flutterLocalNotificationsPlugin.show(
-      1, // ID de notificación diferente para evitar colisiones
+      DateTime.now().millisecondsSinceEpoch ~/ 1000, // ID único basado en tiempo
       title,
       body,
       platformChannelSpecifics,
+      payload: payload,
     );
   }
 
