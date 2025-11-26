@@ -354,6 +354,14 @@ class BraceletService extends ChangeNotifier {
       
       print("Conectado exitosamente a la manilla");
       
+      // Enviar notificación de conexión
+      try {
+        final notificationService = NotificationService();
+        await notificationService.showBraceletConnectedNotification();
+      } catch (e) {
+        print("Error enviando notificación de conexión: $e");
+      }
+      
       // Sincronizar recordatorios automáticamente
       print("🔄 Sincronizando recordatorios con la manilla...");
       try {
@@ -959,6 +967,14 @@ class BraceletService extends ChangeNotifier {
       await BraceletStorageService.saveLastConnectedBracelet(_connectedDevice!);
       
       notifyListeners();
+      
+      // Enviar notificación de conexión
+      try {
+        final notificationService = NotificationService();
+        await notificationService.showBraceletConnectedNotification();
+      } catch (e) {
+        print('[RECONNECT] Error enviando notificación: $e');
+      }
       
       // Sincronizar recordatorios automáticamente después de reconectar
       print('[RECONNECT] 🔄 Sincronizando recordatorios...');
