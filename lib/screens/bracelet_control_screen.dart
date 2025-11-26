@@ -2,11 +2,10 @@
 // ARCHIVO: lib/screens/bracelet_control_screen.dart
 // ========================================
 import 'package:flutter/material.dart';
-import 'dart:async';
+import 'package:intl/intl.dart';
 import '../models/bracelet_device.dart';
 import '../services/bracelet_service.dart';
-import '../services/background_ble_service_simple.dart';
-import '../services/bracelet_storage_service.dart';
+import 'bracelet_debug_screen.dart';
 
 class BraceletControlScreen extends StatefulWidget {
   const BraceletControlScreen({Key? key}) : super(key: key);
@@ -17,144 +16,61 @@ class BraceletControlScreen extends StatefulWidget {
 
 class _BraceletControlScreenState extends State<BraceletControlScreen> {
   final BraceletService _braceletService = BraceletService();
-  final List<BraceletResponse> _responseLog = [];
-  StreamSubscription<BraceletResponse>? _responseSubscription;
-  bool _isTestingLed = false;
-  bool _isBackgroundServiceRunning = false;
-  Map<String, dynamic> _reconnectionStats = {};
+  DateTime? _lastSyncTime;
 
   @override
   void initState() {
     super.initState();
-    _setupResponseListener();
-    _checkBackgroundServiceStatus();
-    _loadReconnectionStats();
-  }
-
-  void _setupResponseListener() {
-    _responseSubscription = _braceletService.responseStream.listen((response) {
-      setState(() {
-        _responseLog.insert(0, response);
-        // Mantener solo los últimos 20 mensajes
-        if (_responseLog.length > 20) {
-          _responseLog.removeRange(20, _responseLog.length);
-        }
-      });
-    });
-  }
-
-  Future<void> _sendCommand(String command) async {
-    try {
-      await _braceletService.sendCommand(command);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error enviando comando: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _simulateReminderAlert() async {
-    try {
-      await _braceletService.simulateAlert();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Alerta de prueba enviada'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error enviando alerta: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    _lastSyncTime = DateTime.now(); // Asumimos que se sincronizó al conectar o recientemente
   }
 
   Future<void> _syncReminders() async {
     try {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sincronizando recordatorios...'),
+          content: Row(
+            children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+              SizedBox(width: 16),
+              Text('Sincronizando recordatorios...'),
+            ],
+          ),
           backgroundColor: Colors.blue,
+          duration: Duration(seconds: 10), // Duración larga, se quitará al terminar
         ),
       );
       
       await _braceletService.syncRemindersToBracelet();
       
-      ScaffoldMessenger.of(context).removeCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('¡Recordatorios sincronizados con éxito!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).removeCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al sincronizar: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-  
-  Future<void> _checkBackgroundServiceStatus() async {
-    try {
-      final isRunning = await BackgroundBleService.isServiceRunning();
-      setState(() {
-        _isBackgroundServiceRunning = isRunning;
-      });
-    } catch (e) {
-      print('Error verificando estado del servicio: $e');
-    }
-  }
-  
-  Future<void> _toggleBackgroundService(bool enable) async {
-    try {
-      if (enable) {
-        await BackgroundBleService.startService();
+      if (mounted) {
+        setState(() {
+          _lastSyncTime = DateTime.now();
+        });
+        
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Servicio en segundo plano iniciado'),
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('¡Sincronización completada!'),
+              ],
+            ),
             backgroundColor: Colors.green,
           ),
         );
-      } else {
-        await BackgroundBleService.stopService();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Servicio en segundo plano detenido'),
-            backgroundColor: Colors.orange,
+            content: Text('Error al sincronizar: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
-      
-      await _checkBackgroundServiceStatus();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error con servicio en segundo plano: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-  
-  Future<void> _loadReconnectionStats() async {
-    try {
-      final stats = await BraceletStorageService.getStorageStats();
-      setState(() {
-        _reconnectionStats = stats;
-      });
-    } catch (e) {
-      print('Error cargando estadísticas de reconexión: $e');
     }
   }
 
@@ -166,7 +82,7 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
         backgroundColor: const Color(0xFF1E3A5F),
         elevation: 0,
         title: Text(
-          'Control de Manilla',
+          'Mi Manilla',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -177,11 +93,16 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          // Botón oculto/discreto para debug
           IconButton(
-            icon: Icon(Icons.settings, color: Colors.white),
+            icon: Icon(Icons.build_circle_outlined, color: Colors.white.withOpacity(0.5)),
             onPressed: () {
-              // Navegar a configuración avanzada
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => BraceletDebugScreen()),
+              );
             },
+            tooltip: 'Opciones avanzadas',
           ),
         ],
       ),
@@ -194,23 +115,185 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
             return _buildDisconnectedState();
           }
 
+          final isConnected = device.connectionStatus == BraceletConnectionStatus.connected;
+
           return SingleChildScrollView(
-            padding: EdgeInsets.all(20),
+            padding: EdgeInsets.all(24),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Estado de conexión
-                _buildConnectionCard(device),
+                // Imagen de manilla (icono grande por ahora)
+                Container(
+                  padding: EdgeInsets.all(30),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 20,
+                        offset: Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.watch,
+                    size: 80,
+                    color: isConnected ? Color(0xFF4A90E2) : Colors.grey,
+                  ),
+                ),
                 
-                SizedBox(height: 20),
+                SizedBox(height: 24),
                 
-                // Controles principales
-                _buildControlSection(),
+                Text(
+                  device.name,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E3A5F),
+                  ),
+                ),
                 
-                SizedBox(height: 20),
+                SizedBox(height: 8),
                 
-                // Log de respuestas
-                _buildResponseLogSection(),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isConnected ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isConnected ? Colors.green : Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        isConnected ? 'Conectado' : 'Desconectado',
+                        style: TextStyle(
+                          color: isConnected ? Colors.green[700] : Colors.red[700],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 40),
+
+                // Tarjeta de Sincronización
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 15,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Sincronización',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E3A5F),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        _lastSyncTime != null 
+                            ? 'Última vez: ${DateFormat('HH:mm a').format(_lastSyncTime!)}'
+                            : 'No sincronizado recientemente',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: (isConnected && !_braceletService.isSyncing) 
+                              ? _syncReminders 
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            disabledBackgroundColor: Colors.grey[300],
+                          ),
+                          child: _braceletService.isSyncing
+                              ? SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.sync),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Sincronizar Ahora',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 24),
+
+                // Información útil
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF4A90E2).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Color(0xFF4A90E2)),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'Mantén la manilla cerca de tu teléfono para asegurar que recibas todas las notificaciones.',
+                          style: TextStyle(
+                            color: Color(0xFF1E3A5F),
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           );
@@ -227,486 +310,46 @@ class _BraceletControlScreenState extends State<BraceletControlScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.bluetooth_disabled,
+              Icons.watch_off,
               size: 80,
-              color: Colors.grey[400],
+              color: Colors.grey[300],
             ),
             SizedBox(height: 24),
             Text(
-              'Manilla Desconectada',
+              'Manilla no conectada',
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[700],
               ),
             ),
             SizedBox(height: 12),
             Text(
-              'No hay ninguna manilla conectada en este momento',
+              'Conecta tu manilla para sincronizar tus recordatorios y recibir alertas.',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.grey[600],
+                height: 1.5,
               ),
-              textAlign: TextAlign.center,
             ),
             SizedBox(height: 32),
-            ElevatedButton.icon(
+            ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pushReplacementNamed('/bracelet-setup');
               },
-              icon: Icon(Icons.add),
-              label: Text('Configurar Manilla'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF4A90E2),
                 foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConnectionCard(BraceletDevice device) {
-    final isConnected = device.connectionStatus == BraceletConnectionStatus.connected;
-    
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isConnected 
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
+                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  isConnected ? Icons.watch : Icons.watch_off,
-                  color: isConnected ? Colors.green : Colors.red,
-                  size: 32,
-                ),
               ),
-              SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      device.name,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E3A5F),
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'MAC: ${device.macAddress}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isConnected 
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isConnected ? 'Conectado' : 'Desconectado',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: isConnected ? Colors.green[700] : Colors.red[700],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          
-          if (device.lastConnected != null) ...[
-            SizedBox(height: 16),
-            Divider(),
-            SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
-                SizedBox(width: 8),
-                Text(
-                  'Última conexión: ${_formatDateTime(device.lastConnected!)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
+              child: Text('Ir a Configuración'),
             ),
           ],
-          
-          // Estado del recordatorio activo
-          if (_braceletService.hasActiveReminder) ...[
-            SizedBox(height: 16),
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.alarm, size: 16, color: Colors.orange[700]),
-                      SizedBox(width: 8),
-                      Text(
-                        'Recordatorio Activo:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    _braceletService.activeReminderTitle ?? 'Sin título',
-                    style: TextStyle(color: Colors.orange[800]),
-                  ),
-                  SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.touch_app, size: 14, color: Colors.grey[600]),
-                      SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                        'Presiona el botón GPIO2 en la manilla para confirmar',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-          
-          // Información de reconexión automática
-          if (_reconnectionStats.isNotEmpty && _reconnectionStats['hasStoredBracelet'] == true) ...[
-            SizedBox(height: 16),
-            Divider(),
-            SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  _reconnectionStats['autoReconnectEnabled'] == true 
-                      ? Icons.autorenew 
-                      : Icons.sync_disabled, 
-                  size: 16, 
-                  color: _reconnectionStats['autoReconnectEnabled'] == true 
-                      ? Colors.blue[600] 
-                      : Colors.grey[600]
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Reconexión Automática',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E3A5F),
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        _reconnectionStats['autoReconnectEnabled'] == true 
-                            ? 'Activa - ${_reconnectionStats['reconnectAttempts'] ?? 0} intentos'
-                            : 'Desactivada',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-        ],
+        ),
       ),
     );
-  }
-
-  Widget _buildControlSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Controles',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1E3A5F),
-          ),
-        ),
-        SizedBox(height: 16),
-        
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _simulateReminderAlert,
-            icon: Icon(Icons.notifications_active),
-            label: Text('Simular Alerta'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 16),
-              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-
-        SizedBox(height: 12),
-        
-        // Botón de test para botón físico
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => _sendCommand('READ 2'),
-            icon: Icon(Icons.touch_app),
-            label: Text('Leer Estado Botón (GPIO2)'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF28A745),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 16),
-              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-
-        SizedBox(height: 20),
-
-        // Botón de Sincronización
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _braceletService.isSyncing ? null : _syncReminders,
-            icon: _braceletService.isSyncing 
-                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white,))
-                : Icon(Icons.sync),
-            label: Text(_braceletService.isSyncing ? 'Sincronizando...' : 'Sincronizar Recordatorios'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF007BFF),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 16),
-              textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        
-        SizedBox(height: 20),
-        
-        // Toggle para servicio en segundo plano
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _isBackgroundServiceRunning ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _isBackgroundServiceRunning ? Colors.green.withOpacity(0.3) : Colors.grey.withOpacity(0.3),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    _isBackgroundServiceRunning ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                    color: _isBackgroundServiceRunning ? Colors.green[700] : Colors.grey[600],
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Servicio en Segundo Plano',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A5F),
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          _isBackgroundServiceRunning 
-                              ? 'Activo - Escucha confirmaciones siempre'
-                              : 'Inactivo - Solo escucha con app abierta',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: _isBackgroundServiceRunning,
-                    onChanged: _toggleBackgroundService,
-                    activeColor: Colors.green,
-                  ),
-                ],
-              ),
-              if (_isBackgroundServiceRunning) ...[
-                SizedBox(height: 12),
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.green[700]),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Perfecto para personas mayores - funciona con teléfono en el bolsillo',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.green[700],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-
-
-  Widget _buildResponseLogSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Log de Respuestas',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A5F),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _responseLog.clear();
-                });
-              },
-              child: Text('Limpiar'),
-            ),
-          ],
-        ),
-        SizedBox(height: 12),
-        
-        Container(
-          height: 300,
-          decoration: BoxDecoration(
-            color: Colors.grey[900],
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: _responseLog.isEmpty
-              ? Center(
-                  child: Text(
-                    'No hay mensajes aún...',
-                    style: TextStyle(color: Colors.grey[500]),
-                  ),
-                )
-              : ListView.builder(
-                  padding: EdgeInsets.all(12),
-                  itemCount: _responseLog.length,
-                  itemBuilder: (context, index) {
-                    final response = _responseLog[index];
-                    return Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: RichText(
-                        text: TextSpan(
-                          style: TextStyle(fontFamily: 'monospace', fontSize: 12),
-                          children: [
-                            TextSpan(
-                              text: '[${_formatTime(response.timestamp)}] ',
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                            TextSpan(
-                              text: response.response,
-                              style: TextStyle(
-                                color: response.isSuccess ? Colors.green[300] : Colors.red[300],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  String _formatDateTime(DateTime dateTime) {
-    return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${_formatTime(dateTime)}';
-  }
-
-  String _formatTime(DateTime dateTime) {
-    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  void dispose() {
-    _responseSubscription?.cancel();
-    super.dispose();
   }
 }

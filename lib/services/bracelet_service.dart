@@ -34,6 +34,8 @@ class BraceletService extends ChangeNotifier {
   
   final StreamController<BraceletResponse> _responseController = 
       StreamController<BraceletResponse>.broadcast();
+  final StreamController<BraceletConnectionStatus> _connectionStatusController =
+      StreamController<BraceletConnectionStatus>.broadcast();
   
   final List<BluetoothDevice> _discoveredDevices = [];
   bool _isScanning = false;
@@ -62,6 +64,7 @@ class BraceletService extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   bool get isConnected => _connectedDevice?.connectionStatus == BraceletConnectionStatus.connected;
   Stream<BraceletResponse> get responseStream => _responseController.stream;
+  Stream<BraceletConnectionStatus> get connectionStatusStream => _connectionStatusController.stream;
   
   // Estado de recordatorios activos en la manilla
   int? get activeReminderIndex => _activeReminderIndex;
@@ -415,11 +418,13 @@ class BraceletService extends ChangeNotifier {
           connectionStatus: BraceletConnectionStatus.connected,
           lastConnected: DateTime.now(),
         );
+        _connectionStatusController.add(BraceletConnectionStatus.connected);
         break;
       case BluetoothConnectionState.disconnected:
         _connectedDevice = _connectedDevice!.copyWith(
           connectionStatus: BraceletConnectionStatus.disconnected,
         );
+        _connectionStatusController.add(BraceletConnectionStatus.disconnected);
         break;
       default:
         break;
@@ -1068,6 +1073,7 @@ class BraceletService extends ChangeNotifier {
     _connectedDevice = _connectedDevice!.copyWith(
       connectionStatus: BraceletConnectionStatus.disconnected,
     );
+    _connectionStatusController.add(BraceletConnectionStatus.disconnected);
     
     notifyListeners();
     

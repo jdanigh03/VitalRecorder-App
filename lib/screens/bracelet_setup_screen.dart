@@ -3,8 +3,10 @@
 // ========================================
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'dart:async';
 import '../models/bracelet_device.dart';
 import '../services/bracelet_service.dart';
+import '../services/notification_service.dart';
 
 class BraceletSetupScreen extends StatefulWidget {
   const BraceletSetupScreen({Key? key}) : super(key: key);
@@ -15,6 +17,9 @@ class BraceletSetupScreen extends StatefulWidget {
 
 class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
   final BraceletService _braceletService = BraceletService();
+  final NotificationService _notificationService = NotificationService();
+  StreamSubscription<BraceletConnectionStatus>? _connectionSubscription;
+  
   bool _isInitialized = false;
   bool _isConnecting = false;
   String? _connectionError;
@@ -23,22 +28,41 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
   void initState() {
     super.initState();
     _initializeBluetooth();
+    _setupConnectionListener();
+  }
+
+  void _setupConnectionListener() {
+    _connectionSubscription = _braceletService.connectionStatusStream.listen((status) {
+      if (status == BraceletConnectionStatus.disconnected) {
+        _notificationService.showBraceletDisconnectedNotification();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _initializeBluetooth() async {
     try {
       final success = await _braceletService.initialize();
-      setState(() {
-        _isInitialized = success;
-        if (!success) {
-          _connectionError = "No se pudo inicializar Bluetooth. Verifique que esté activado.";
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _isInitialized = success;
+          if (!success) {
+            _connectionError = "No se pudo inicializar Bluetooth. Verifique que esté activado.";
+          }
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isInitialized = false;
-        _connectionError = "Error inicializando Bluetooth: $e";
-      });
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+          _connectionError = "Error inicializando Bluetooth: $e";
+        });
+      }
     }
   }
 
@@ -60,9 +84,11 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
     try {
       await _braceletService.startScan(timeout: Duration(seconds: 15));
     } catch (e) {
-      setState(() {
-        _connectionError = "Error durante el escaneo: $e";
-      });
+      if (mounted) {
+        setState(() {
+          _connectionError = "Error durante el escaneo: $e";
+        });
+      }
     }
   }
 
@@ -75,36 +101,40 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
     try {
       final success = await _braceletService.connectToDevice(device);
       
-      setState(() {
-        _isConnecting = false;
-      });
-
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('¡Conectado exitosamente!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-        
-        // Navegar a la pantalla de control después de conexión exitosa
-        Navigator.of(context).pushReplacementNamed('/bracelet-control');
-      } else {
+      if (mounted) {
         setState(() {
-          _connectionError = "No se pudo conectar a la manilla";
+          _isConnecting = false;
         });
+
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('¡Conectado exitosamente!'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Navegar a la pantalla de control después de conexión exitosa
+          Navigator.of(context).pushReplacementNamed('/bracelet-control');
+        } else {
+          setState(() {
+            _connectionError = "No se pudo conectar a la manilla";
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _isConnecting = false;
-        _connectionError = "Error conectando: $e";
-      });
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _connectionError = "Error conectando: $e";
+        });
+      }
     }
   }
 
@@ -494,11 +524,5 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _braceletService.stopScan();
-    super.dispose();
   }
 }
