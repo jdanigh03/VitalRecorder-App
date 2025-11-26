@@ -216,14 +216,24 @@ class ReminderNew {
       endDate.day,
     );
     
+    final startDay = DateTime(
+      startDate.year,
+      startDate.month,
+      startDate.day,
+    );
+    
     // Iterar día por día
     while (currentDate.isBefore(endDay) || currentDate.isAtSameMomentAs(endDay)) {
-      // Si es SPECIFIC_DAYS, verificar si el día actual está en la lista
       bool shouldAddThisDay = true;
+      
       if (intervalType == IntervalType.SPECIFIC_DAYS && specificDays != null) {
         // weekday: 1=Monday, 2=Tuesday, ... 7=Sunday
         final currentWeekday = currentDate.weekday;
         shouldAddThisDay = specificDays!.contains(currentWeekday);
+      } else if (intervalType == IntervalType.DAYS) {
+        // Verificar intervalo de días
+        final diffDays = currentDate.difference(startDay).inDays;
+        shouldAddThisDay = (diffDays % intervalValue) == 0;
       }
       
       if (shouldAddThisDay) {
@@ -251,14 +261,48 @@ class ReminderNew {
     return scheduledTimes;
   }
 
-  /// Calcula todas las ocurrencias para un día específico
+  /// Calcula todas las ocurrencias para un día específico (Optimizado)
   List<DateTime> calculateOccurrencesForDay(DateTime day) {
+    // 1. Validar rango de fechas
     final dayStart = DateTime(day.year, day.month, day.day);
-    final dayEnd = dayStart.add(Duration(days: 1));
+    final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+    final endDay = DateTime(endDate.year, endDate.month, endDate.day);
     
-    return calculateAllScheduledTimes()
-        .where((dt) => !dt.isBefore(dayStart) && dt.isBefore(dayEnd))
-        .toList();
+    if (dayStart.isBefore(startDay) || dayStart.isAfter(endDay)) {
+      return [];
+    }
+
+    // 2. Verificar reglas de intervalo
+    bool shouldAddThisDay = true;
+    if (intervalType == IntervalType.SPECIFIC_DAYS && specificDays != null) {
+      shouldAddThisDay = specificDays!.contains(dayStart.weekday);
+    } else if (intervalType == IntervalType.DAYS) {
+       // Días transcurridos desde el inicio
+       final diffDays = dayStart.difference(startDay).inDays;
+       shouldAddThisDay = (diffDays % intervalValue) == 0;
+    }
+    
+    if (!shouldAddThisDay) return [];
+
+    // 3. Generar horarios
+    List<DateTime> occurrences = [];
+    for (final time in dailyScheduleTimes) {
+      final scheduled = DateTime(
+        dayStart.year,
+        dayStart.month,
+        dayStart.day,
+        time.hour,
+        time.minute,
+      );
+      
+      // Validar que el horario específico esté dentro del rango exacto
+      if ((scheduled.isAfter(startDate) || scheduled.isAtSameMomentAs(startDate)) &&
+          (scheduled.isBefore(endDate) || scheduled.isAtSameMomentAs(endDate))) {
+        occurrences.add(scheduled);
+      }
+    }
+    
+    return occurrences;
   }
 
   /// Obtiene la próxima ocurrencia desde ahora
