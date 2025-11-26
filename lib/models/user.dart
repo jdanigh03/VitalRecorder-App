@@ -111,6 +111,7 @@ class UserModel {
   final List<String> pacientesIds; // IDs de pacientes (para cuidadores)
   final List<String> cuidadoresIds; // IDs de cuidadores (para pacientes)
   final String? pacienteId; // ID del perfil de paciente (si el usuario es paciente)
+  final DateTime? lastNotificationReadDate; // Fecha de última lectura de notificaciones
 
   UserModel({
     this.id,
@@ -122,6 +123,7 @@ class UserModel {
     this.pacientesIds = const [],
     this.cuidadoresIds = const [],
     this.pacienteId,
+    this.lastNotificationReadDate,
   });
 
   // Getter para mantener compatibilidad con código que usa userId
@@ -137,6 +139,9 @@ class UserModel {
       'pacientesIds': pacientesIds,
       'cuidadoresIds': cuidadoresIds,
       'pacienteId': pacienteId,
+      'lastNotificationReadDate': lastNotificationReadDate != null 
+          ? Timestamp.fromDate(lastNotificationReadDate!) 
+          : null,
     };
   }
 
@@ -152,6 +157,9 @@ class UserModel {
       pacientesIds: List<String>.from(map['pacientesIds'] ?? []),
       cuidadoresIds: List<String>.from(map['cuidadoresIds'] ?? []),
       pacienteId: map['pacienteId'],
+      lastNotificationReadDate: map['lastNotificationReadDate'] != null 
+          ? (map['lastNotificationReadDate'] as Timestamp).toDate() 
+          : null,
     );
   }
 
@@ -169,6 +177,9 @@ class UserModel {
       pacientesIds: List<String>.from(data['pacientesIds'] ?? []),
       cuidadoresIds: List<String>.from(data['cuidadoresIds'] ?? []),
       pacienteId: data['pacienteId'],
+      lastNotificationReadDate: data['lastNotificationReadDate'] != null 
+          ? (data['lastNotificationReadDate'] as Timestamp).toDate() 
+          : null,
     );
   }
 
@@ -182,6 +193,7 @@ class UserModel {
     List<String>? pacientesIds,
     List<String>? cuidadoresIds,
     String? pacienteId,
+    DateTime? lastNotificationReadDate,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -193,6 +205,7 @@ class UserModel {
       pacientesIds: pacientesIds ?? this.pacientesIds,
       cuidadoresIds: cuidadoresIds ?? this.cuidadoresIds,
       pacienteId: pacienteId ?? this.pacienteId,
+      lastNotificationReadDate: lastNotificationReadDate ?? this.lastNotificationReadDate,
     );
   }
 

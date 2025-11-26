@@ -279,4 +279,20 @@ class UserService {
       return false;
     }
   }
+
+  // Marcar todas las notificaciones como leídas
+  Future<bool> markNotificationsAsRead() async {
+    try {
+      final user = currentUser;
+      if (user == null) return false;
+
+      await _usersCollection.doc(user.uid).update({
+        'lastNotificationReadDate': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      print('Error marcando notificaciones como leídas: $e');
+      return false;
+    }
+  }
 }

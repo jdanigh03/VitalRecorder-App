@@ -28,6 +28,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   bool _isLoadingInvitations = true;
   bool _isLoadingNotifications = true;
   String? _userRole;
+  DateTime? _lastReadDate;
   
   final List<_AppNotification> _notifications = [];
 
@@ -42,6 +43,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       // Obtener rol del usuario
       final userData = await _userService.getCurrentUserData();
       _userRole = userData?.role;
+      _lastReadDate = userData?.lastNotificationReadDate;
       
       // Invitaciones para cuidador
       if (_userRole == 'cuidador') {
@@ -53,12 +55,16 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       // Cargar historial de notificaciones
       await _loadNotifications();
       
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       _isLoadingInvitations = false;
       _isLoadingNotifications = false;
       print('Error cargando datos de notificaciones: $e');
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -102,13 +108,25 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Todas las notificaciones marcadas como leídas'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+            onPressed: () async {
+              // Actualización optimista con buffer de 1 segundo para evitar problemas de precisión
+              _lastReadDate = DateTime.now().add(Duration(seconds: 1));
+              
+              // Actualizar en servidor
+              await _userService.markNotificationsAsRead();
+              
+              // Recargar lista con la nueva fecha
+              await _loadNotifications();
+              
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Todas las notificaciones marcadas como leídas'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
             child: Text(
               'Marcar todo',
@@ -194,6 +212,29 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         }
         final pacienteNombre = paciente?.persona.nombres ?? 'Paciente';
 
+        // Notificación de modificación/pausa del recordatorio
+        if (reminder.updatedAt != null && reminder.updatedAt!.isAfter(sevenDaysAgo)) {
+           // Si se actualizó recientemente
+           String msg = 'Recordatorio modificado';
+           String type = 'modified';
+           
+           if (reminder.isPaused) {
+               msg = 'Recordatorio pausado';
+               type = 'paused';
+           }
+           
+           final notificationDate = reminder.updatedAt!;
+           final isRead = _lastReadDate != null && notificationDate.isBefore(_lastReadDate!);
+
+           _notifications.add(_AppNotification(
+                type: type,
+                title: '${pacienteNombre} - ${reminder.title}',
+                message: msg,
+                when: notificationDate,
+                read: isRead,
+              ));
+        }
+
         // Obtener confirmaciones del recordatorio
         final confirmations = await _reminderService.getConfirmations(reminder.id);
         
@@ -223,40 +264,52 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
               ),
             );
             
+            
+            DateTime? notificationTime;
+            String? type;
+            String? message;
+            String? title = '${pacienteNombre} - ${reminder.title}';
+
             if (dayOffset == 0) {
               // Hoy
               if (occurrence.isAfter(now)) {
-                _notifications.add(_AppNotification(
-                  type: reminder.type == 'medication' ? 'medication' : 'reminder',
-                  title: '${pacienteNombre} - ${reminder.title}',
-                  message: 'Programado para ${DateFormat('HH:mm').format(occurrence)}',
-                  when: occurrence,
-                ));
+                // No mostrar recordatorios futuros en notificaciones
+                continue;
               } else if (confirmation.status == ConfirmationStatus.CONFIRMED) {
-                _notifications.add(_AppNotification(
-                  type: 'completed',
-                  title: '${pacienteNombre} - ${reminder.title}',
-                  message: 'Completado',
-                  when: confirmation.confirmedAt ?? occurrence,
-                ));
+                type = 'completed';
+                message = 'Completado';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
               } else if (confirmation.status == ConfirmationStatus.MISSED) {
-                _notifications.add(_AppNotification(
-                  type: 'warning',
-                  title: '${pacienteNombre} - ${reminder.title}',
-                  message: 'Omitido',
-                  when: occurrence,
-                ));
+                type = 'warning';
+                message = 'Omitido';
+                notificationTime = occurrence;
+              } else if (confirmation.status == ConfirmationStatus.PAUSED) {
+                type = 'paused';
+                message = 'Pausado';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
               }
             } else {
               // Días anteriores
-              if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
-                _notifications.add(_AppNotification(
-                  type: 'warning',
-                  title: '${pacienteNombre} - ${reminder.title}',
-                  message: 'Omitido (${DateFormat('dd/MM').format(occurrence)})',
-                  when: occurrence,
-                ));
+              if (confirmation.status == ConfirmationStatus.PAUSED) {
+                type = 'paused';
+                message = 'Pausado (${DateFormat('dd/MM').format(occurrence)})';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
+              } else if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
+                type = 'warning';
+                message = 'Omitido (${DateFormat('dd/MM').format(occurrence)})';
+                notificationTime = occurrence;
               }
+            }
+
+            if (notificationTime != null && type != null && message != null) {
+               final isRead = _lastReadDate != null && notificationTime.isBefore(_lastReadDate!);
+               _notifications.add(_AppNotification(
+                  type: type,
+                  title: title,
+                  message: message,
+                  when: notificationTime,
+                  read: isRead,
+                ));
             }
           }
         }
@@ -266,6 +319,28 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       final reminders = await _reminderService.getAllReminders();
 
       for (final reminder in reminders) {
+        // Notificación de modificación/pausa del recordatorio
+        if (reminder.updatedAt != null && reminder.updatedAt!.isAfter(sevenDaysAgo)) {
+           String msg = 'Recordatorio modificado';
+           String type = 'modified';
+           
+           if (reminder.isPaused) {
+               msg = 'Recordatorio pausado';
+               type = 'paused';
+           }
+           
+           final notificationDate = reminder.updatedAt!;
+           final isRead = _lastReadDate != null && notificationDate.isBefore(_lastReadDate!);
+
+           _notifications.add(_AppNotification(
+                type: type,
+                title: reminder.title,
+                message: msg,
+                when: notificationDate,
+                read: isRead,
+              ));
+        }
+
         final confirmations = await _reminderService.getConfirmations(reminder.id);
         
         for (int dayOffset = -7; dayOffset <= 0; dayOffset++) {
@@ -292,38 +367,49 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
               ),
             );
             
+            DateTime? notificationTime;
+            String? type;
+            String? message;
+            String? title = reminder.title;
+
             if (dayOffset == 0) {
               if (occurrence.isAfter(now)) {
-                _notifications.add(_AppNotification(
-                  type: reminder.type == 'medication' ? 'medication' : 'reminder',
-                  title: reminder.title,
-                  message: 'Programado para ${DateFormat('HH:mm').format(occurrence)}',
-                  when: occurrence,
-                ));
+                // No mostrar recordatorios futuros
+                continue;
               } else if (confirmation.status == ConfirmationStatus.CONFIRMED) {
-                _notifications.add(_AppNotification(
-                  type: 'completed',
-                  title: reminder.title,
-                  message: 'Completado',
-                  when: confirmation.confirmedAt ?? occurrence,
-                ));
+                type = 'completed';
+                message = 'Completado';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
               } else if (confirmation.status == ConfirmationStatus.MISSED) {
-                _notifications.add(_AppNotification(
-                  type: 'warning',
-                  title: reminder.title,
-                  message: 'Omitido',
-                  when: occurrence,
-                ));
+                type = 'warning';
+                message = 'Omitido';
+                notificationTime = occurrence;
+              } else if (confirmation.status == ConfirmationStatus.PAUSED) {
+                type = 'paused';
+                message = 'Pausado';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
               }
             } else {
-              if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
-                _notifications.add(_AppNotification(
-                  type: 'warning',
-                  title: reminder.title,
-                  message: 'Omitido (${DateFormat('dd/MM').format(occurrence)})',
-                  when: occurrence,
-                ));
+              if (confirmation.status == ConfirmationStatus.PAUSED) {
+                type = 'paused';
+                message = 'Pausado (${DateFormat('dd/MM').format(occurrence)})';
+                notificationTime = confirmation.confirmedAt ?? occurrence;
+              } else if (confirmation.status == ConfirmationStatus.MISSED || confirmation.status == ConfirmationStatus.PENDING) {
+                type = 'warning';
+                message = 'Omitido (${DateFormat('dd/MM').format(occurrence)})';
+                notificationTime = occurrence;
               }
+            }
+
+            if (notificationTime != null && type != null && message != null) {
+               final isRead = _lastReadDate != null && notificationTime.isBefore(_lastReadDate!);
+               _notifications.add(_AppNotification(
+                  type: type,
+                  title: title,
+                  message: message,
+                  when: notificationTime,
+                  read: isRead,
+                ));
             }
           }
         }
@@ -374,6 +460,14 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       case 'warning':
         icon = Icons.warning;
         color = Colors.orange;
+        break;
+      case 'paused':
+        icon = Icons.pause_circle_filled;
+        color = Colors.grey;
+        break;
+      case 'modified':
+        icon = Icons.edit;
+        color = Colors.blueGrey;
         break;
       default:
         icon = Icons.notifications;
