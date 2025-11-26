@@ -83,6 +83,19 @@ class _CuidadorCrearRecordatorioNewScreenState
   }
 
   void _nextStep() {
+    // Validar paso 1 antes de avanzar
+    if (_currentStep == 0) {
+      if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Por favor completa todos los campos requeridos'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+    }
+
     if (_currentStep < 4) {
       setState(() => _currentStep++);
       _pageController.animateToPage(
@@ -121,10 +134,17 @@ class _CuidadorCrearRecordatorioNewScreenState
   }
 
   Future<void> _saveReminder() async {
-    if (!_formKey.currentState!.validate()) {
+    print("=== _saveReminder INICIADO ===");
+    
+    // Ya no validamos con _formKey aquí porque el formulario puede no estar visible (unmounted) en el paso 5.
+    // La validación se hizo al salir del paso 0.
+    // Hacemos una validación manual de los datos críticos por seguridad.
+    
+    if (_titleController.text.trim().isEmpty) {
+      print("Error: Título vacío");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Por favor completa todos los campos requeridos'),
+          content: Text('Por favor ingresa un nombre para el recordatorio'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -132,6 +152,7 @@ class _CuidadorCrearRecordatorioNewScreenState
     }
 
     try {
+      print("Mostrando diálogo de carga...");
       // Mostrar loading
       showDialog(
         context: context,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/user_service.dart';
 import 'auth_wrapper.dart';
 import 'asignar_cuidador.dart';
 import 'perfil_usuario.dart';
@@ -20,6 +21,10 @@ class _AjustesScreenState extends State<AjustesScreen> {
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
   String _notificationTime = '5 minutos antes';
+  
+  // Variables para cuidador
+  bool _isCaregiver = false;
+  String _caregiverComplianceTolerance = '15 minutos';
 
   @override
   void initState() {
@@ -30,11 +35,17 @@ class _AjustesScreenState extends State<AjustesScreen> {
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final userService = UserService();
+      final isCaregiver = await userService.isCaregiver();
+
       setState(() {
         _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
         _soundEnabled = prefs.getBool('sound_enabled') ?? true;
         _vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
         _notificationTime = prefs.getString('notification_time') ?? '5 minutos antes';
+        
+        _isCaregiver = isCaregiver;
+        _caregiverComplianceTolerance = prefs.getString('caregiver_compliance_tolerance') ?? '15 minutos';
       });
     } catch (e) {
       print('Error cargando configuraciones: $e');
@@ -48,6 +59,10 @@ class _AjustesScreenState extends State<AjustesScreen> {
       await prefs.setBool('sound_enabled', _soundEnabled);
       await prefs.setBool('vibration_enabled', _vibrationEnabled);
       await prefs.setString('notification_time', _notificationTime);
+      
+      if (_isCaregiver) {
+        await prefs.setString('caregiver_compliance_tolerance', _caregiverComplianceTolerance);
+      }
     } catch (e) {
       print('Error guardando configuraciones: $e');
     }
@@ -133,6 +148,21 @@ class _AjustesScreenState extends State<AjustesScreen> {
                   _saveSettings();
                 },
               ),
+              if (_isCaregiver)
+                _buildDropdownCard(
+                  'Alerta de incumplimiento',
+                  'Notificar si el paciente no confirma después de:',
+                  Icons.warning_amber_rounded,
+                  Colors.redAccent,
+                  _caregiverComplianceTolerance,
+                  ['1 minuto', '3 minutos', '5 minutos', '10 minutos', '15 minutos'],
+                  (value) {
+                    setState(() {
+                      _caregiverComplianceTolerance = value!;
+                    });
+                    _saveSettings();
+                  },
+                ),
             ],
             _buildSectionHeader('Cuenta y Perfil'),
             _buildNavigationCard(

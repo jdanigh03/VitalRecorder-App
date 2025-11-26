@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/notification_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:vital_recorder_app/screens/notificaciones.dart';
@@ -45,6 +48,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   int _invitacionesPendientes = 0;
   int _notificacionesNoLeidas = 0; // Para control de estado anterior
 
+  // Timer para verificar cumplimiento en primer plano
+  Timer? _complianceTimer;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +58,71 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     _hasInitialized = false;
     _loadUserData();
     _setupNotificacionesStream();
+    
+    // Iniciar monitoreo de cumplimiento en primer plano (cada 1 minuto)
+    _complianceTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      _checkComplianceForeground();
+    });
+  }
+  
+  // Verificar cumplimiento mientras la app está abierta
+  Future<void> _checkComplianceForeground() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final toleranceStr = prefs.getString('caregiver_compliance_tolerance');
+      
+      if (toleranceStr == null) return; // No hay alerta configurada
+      
+      int toleranceMinutes = 15;
+      if (toleranceStr.contains('1 minuto')) toleranceMinutes = 1;
+      else if (toleranceStr.contains('3 minutos')) toleranceMinutes = 3;
+      else if (toleranceStr.contains('5 minutos')) toleranceMinutes = 5;
+      else if (toleranceStr.contains('10 minutos')) toleranceMinutes = 10;
+      else if (toleranceStr.contains('15 minutos')) toleranceMinutes = 15;
+      
+      final now = DateTime.now();
+      final toleranceTime = now.subtract(Duration(minutes: toleranceMinutes));
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      
+      // Obtener pacientes
+      final pacientes = await _cuidadorService.getPacientes();
+      if (pacientes.isEmpty) return;
+      
+      for (final paciente in pacientes) {
+        // Buscar confirmaciones pendientes y atrasadas
+        final snapshot = await FirebaseFirestore.instance
+            .collection('reminder_confirmations')
+            .where('userId', isEqualTo: paciente.userId)
+            .where('status', isEqualTo: 'PENDING')
+            .where('scheduledTime', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+            .where('scheduledTime', isLessThan: Timestamp.fromDate(toleranceTime))
+            .get();
+            
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          if (data.containsKey('notified_missed_alert') && data['notified_missed_alert'] == true) {
+            continue;
+          }
+          
+          // Obtener info del recordatorio
+          final reminderId = data['reminderId'];
+          String title = 'Recordatorio';
+          final reminder = await _reminderService.getReminderById(reminderId);
+          if (reminder != null) title = reminder.title;
+          
+          // Notificar
+          _notificationService.sendLocalNotification(
+            '⚠️ Alerta de Incumplimiento',
+            '${paciente.persona.nombres} no ha confirmado: $title'
+          );
+          
+          // Marcar como notificado
+          await doc.reference.update({'notified_missed_alert': true});
+        }
+      }
+    } catch (e) {
+      print('Error verificando cumplimiento en primer plano: $e');
+    }
   }
 
   // Escuchar notificaciones en tiempo real (Foreground)
@@ -106,6 +177,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _complianceTimer?.cancel();
     super.dispose();
   }
 
