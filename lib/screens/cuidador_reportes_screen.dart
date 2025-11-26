@@ -80,11 +80,13 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           endDate: _endDate,
           allReminders: reminders,
           allPatients: pacientes,
+          patientId: _selectedPatientId,
         ),
         _analyticsService.getTrendData(
           startDate: _startDate,
           endDate: _endDate,
           allReminders: reminders,
+          patientId: _selectedPatientId,
         ),
         _analyticsService.getPatientStats(
           startDate: _startDate,
@@ -1210,11 +1212,18 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         !(r.endDate.isBefore(_startDate) || r.startDate.isAfter(_endDate.add(Duration(days: 1))))
       ).toList();
 
+      // Buscar stats del paciente
+      final patientStat = _patientStats.firstWhere(
+        (s) => (s['patient'] as UserModel).userId == paciente.userId,
+        orElse: () => <String, dynamic>{},
+      );
+
       await ExportUtils.generateCuidadorPatientPDF(
         paciente: paciente,
         patientReminders: patientReminders,
         startDate: _startDate,
         endDate: _endDate,
+        stats: patientStat,
       );
 
       Navigator.pop(context); // Cerrar diálogo de carga
@@ -1348,6 +1357,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         allReminders: filteredReminders,
         startDate: _startDate,
         endDate: _endDate,
+        patientStats: _patientStats,
         options: {
           'includeDetails': _includeDetails,
           'selectedPatient': _selectedPatientId,
@@ -1357,7 +1367,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
 
       Navigator.pop(context); // Cerrar diálogo de carga
 
-      final exportedCount = _applyAdvancedFilters(_reminders).length;
+      final exportedCount = filteredReminders.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -1470,12 +1480,20 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       // Generar un reporte por cada paciente seleccionado
       for (final paciente in selectedPatients) {
         final patientReminders = _reminders.where((r) => r.userId == paciente.id).toList();
+        
+        // Buscar stats del paciente
+        final patientStat = _patientStats.firstWhere(
+          (s) => (s['patient'] as UserModel).userId == paciente.userId,
+          orElse: () => <String, dynamic>{},
+        );
+
         if (patientReminders.isNotEmpty) {
           await ExportUtils.generateCuidadorPatientPDF(
             paciente: paciente,
             patientReminders: patientReminders,
             startDate: _startDate,
             endDate: _endDate,
+            stats: patientStat,
           );
         }
       }

@@ -64,11 +64,13 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           endDate: _endDate,
           allReminders: reminders,
           allPatients: _currentUser != null ? [_currentUser!] : [],
+          patientId: _currentUser?.userId,
         ),
         _analyticsService.getTrendData(
           startDate: _startDate,
           endDate: _endDate,
           allReminders: reminders,
+          patientId: _currentUser?.userId,
         ),
       ]);
 
@@ -453,9 +455,8 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
   }
 
   int _calculateCompletedCount() {
-    // Aquí podrías calcular el total de recordatorios completados
-    // basándote en las confirmaciones en el período
-    return _stats['completadosHoy'] ?? 0;
+    // Retornar el total de completados en el período (calculado por AnalyticsService)
+    return _stats['completados'] ?? 0;
   }
 
   Widget _buildMetricCard(String title, String value, IconData icon, Color color, String subtitle) {
@@ -950,6 +951,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           patientReminders: _reminders,
           startDate: _startDate,
           endDate: _endDate,
+          stats: _stats,
         );
       }
 
@@ -995,6 +997,14 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           allReminders: _reminders,
           startDate: _startDate,
           endDate: _endDate,
+          patientStats: [{
+            'patient': _currentUser!,
+            'totalRecordatorios': _stats['totalRecordatorios'],
+            'completados': _stats['completados'],
+            'vencidos': _stats['vencidos'],
+            'pendientes': _stats['pendientes'] ?? 0,
+            'adherencia': _stats['adherenciaGeneral'],
+          }],
           options: {
             'includeDetails': _includeDetails,
           },

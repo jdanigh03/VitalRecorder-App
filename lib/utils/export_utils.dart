@@ -21,12 +21,21 @@ class ExportUtils {
     required DateTime startDate,
     required DateTime endDate,
     String? patientName,
+    Map<String, dynamic>? stats,
   }) async {
     try {
       final pdf = pw.Document();
 
       // Calcular estadísticas
-      final stats = _calculateStatistics(reminders);
+      // Calcular estadísticas
+      final rawStats = stats ?? _calculateStatistics(reminders);
+      final finalStats = {
+        'total': rawStats['total'] ?? rawStats['totalRecordatorios'] ?? 0,
+        'completed': rawStats['completed'] ?? rawStats['completados'] ?? 0,
+        'missed': rawStats['missed'] ?? rawStats['vencidos'] ?? 0,
+        'pending': rawStats['pending'] ?? rawStats['pendientes'] ?? 0,
+        'adherenceRate': rawStats['adherenceRate'] ?? rawStats['adherenciaGeneral'] ?? 0,
+      };
       
       pdf.addPage(
         pw.MultiPage(
@@ -39,7 +48,7 @@ class ExportUtils {
               pw.SizedBox(height: 20),
               
               // Resumen de adherencia
-              _buildStatisticsSection(stats),
+              _buildStatisticsSection(finalStats),
               pw.SizedBox(height: 20),
               
               // Tabla de recordatorios
@@ -471,10 +480,19 @@ class ExportUtils {
     required List<ReminderNew> patientReminders,
     required DateTime startDate,
     required DateTime endDate,
+    required Map<String, dynamic> stats,
   }) async {
     try {
       final pdf = pw.Document();
-      final stats = _calculateStatistics(patientReminders);
+      
+      // Normalizar estadísticas para asegurar compatibilidad de claves
+      final normalizedStats = {
+        'total': stats['total'] ?? stats['totalRecordatorios'] ?? 0,
+        'completed': stats['completed'] ?? stats['completados'] ?? 0,
+        'missed': stats['missed'] ?? stats['vencidos'] ?? 0,
+        'pending': stats['pending'] ?? stats['pendientes'] ?? 0,
+        'adherenceRate': stats['adherenceRate'] ?? stats['adherenciaGeneral'] ?? 0,
+      };
 
       pdf.addPage(
         pw.MultiPage(
@@ -487,7 +505,7 @@ class ExportUtils {
               pw.SizedBox(height: 20),
               
               // Estadísticas del paciente
-              _buildStatisticsSection(stats),
+              _buildStatisticsSection(normalizedStats),
               pw.SizedBox(height: 20),
               
               // Tabla de recordatorios del paciente
@@ -495,7 +513,7 @@ class ExportUtils {
               pw.SizedBox(height: 20),
               
               // Análisis de adherencia específico
-              _buildPatientAdherenceAnalysis(stats),
+              _buildPatientAdherenceAnalysis(normalizedStats),
               pw.SizedBox(height: 20),
               
               // Notas explicativas
@@ -534,6 +552,7 @@ class ExportUtils {
     required List<ReminderNew> allReminders,
     required DateTime startDate,
     required DateTime endDate,
+    required List<Map<String, dynamic>> patientStats,
     Map<String, dynamic>? options,
   }) async {
     try {
@@ -596,17 +615,26 @@ class ExportUtils {
       csvData.add(['Paciente', 'Email', 'Total', 'Completados', 'Omitidos', 'Pendientes', 'Adherencia (%)']);
 
       for (final paciente in pacientes) {
-        final patientReminders = allReminders.where((r) => r.userId == paciente.id).toList();
-        final stats = _calculateStatistics(patientReminders);
+        // Buscar stats del paciente
+        final patientStat = patientStats.firstWhere(
+          (s) => (s['patient'] as UserModel).userId == paciente.userId,
+          orElse: () => {
+            'totalRecordatorios': 0,
+            'completados': 0,
+            'vencidos': 0,
+            'pendientes': 0,
+            'adherencia': 0,
+          },
+        );
         
         csvData.add([
           paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'Sin nombre',
           paciente.email,
-          stats['total'],
-          stats['completed'],
-          stats['missed'],
-          stats['pending'],
-          stats['adherenceRate'],
+          patientStat['totalRecordatorios'],
+          patientStat['completados'],
+          patientStat['vencidos'],
+          patientStat['pendientes'],
+          patientStat['adherencia'],
         ]);
       }
 

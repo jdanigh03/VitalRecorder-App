@@ -649,6 +649,47 @@ class ReminderServiceNew {
     }
   }
 
+  /// Obtiene confirmaciones para un rango de fechas (para reportes)
+  Future<List<ReminderConfirmation>> getConfirmationsForRange({
+    required DateTime startDate,
+    required DateTime endDate,
+    String? patientId,
+  }) async {
+    try {
+      // Si tenemos patientId, filtramos primero por usuario (índice simple)
+      // y luego por fecha en memoria para evitar requerir índice compuesto
+      if (patientId != null) {
+        final snapshot = await _confirmationsCollection
+            .where('userId', isEqualTo: patientId)
+            .get();
+            
+        final allConfirmations = snapshot.docs
+            .map((doc) => _convertToConfirmation(doc.data() as Map<String, dynamic>))
+            .toList();
+            
+        // Filtrar por fecha en memoria
+        return allConfirmations.where((c) => 
+          c.scheduledTime.isAfter(startDate.subtract(Duration(milliseconds: 1))) && 
+          c.scheduledTime.isBefore(endDate.add(Duration(milliseconds: 1)))
+        ).toList();
+      }
+      
+      // Si no hay patientId, usamos la consulta original (puede requerir índice si se combina)
+      // Pero como solo filtramos por rango de fecha, debería usar el índice de scheduledTime
+      final snapshot = await _confirmationsCollection
+          .where('scheduledTime', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+          .where('scheduledTime', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+          .get();
+      
+      return snapshot.docs
+          .map((doc) => _convertToConfirmation(doc.data() as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo confirmaciones por rango: $e');
+      return [];
+    }
+  }
+
   /// Obtiene estadísticas de adherencia de un recordatorio
   Future<Map<String, dynamic>> getReminderStats(String reminderId) async {
     try {
