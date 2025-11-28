@@ -26,10 +26,15 @@ app.get('/health', (_req, res) => res.json({ ok: true, now: new Date().toISOStri
 // Crear deuda (cupo adicional) — usado por Flutter
 app.post('/api/pagos/cupo', async (req, res) => {
   try {
-    const { caregiverId, email, amount = 0.01, description = 'Cupo adicional de paciente' } = req.body || {};
+    const { caregiverId, email, amount = 0.01, description = 'Cupo adicional de paciente', lineas_detalle_deuda, items, lines, tipo_factura, moneda } = req.body || {};
     if (!caregiverId || !email || !APPKEY || !PUBLIC_BASE_URL) {
       return res.status(400).json({ error: true, mensaje: 'Faltan parámetros requeridos' });
     }
+
+    // Prioritize lines from request
+    const finalLines = lineas_detalle_deuda || items || lines || [
+      { concepto: description, cantidad: 1, costo_unitario: Number(amount), descuento_unitario: 0 }
+    ];
 
     const identificador = uuidv4();
     const payload = {
@@ -39,10 +44,9 @@ app.post('/api/pagos/cupo', async (req, res) => {
       callback_url: `${PUBLIC_BASE_URL}/api/libelula/pago-exitoso`,
       url_retorno: `${PUBLIC_BASE_URL}/return`,
       descripcion: description,
-      moneda: 'BOB',
-      lineas_detalle_deuda: [
-        { concepto: description, cantidad: 1, costo_unitario: Number(amount), descuento_unitario: 0 }
-      ],
+      moneda: moneda || 'BOB',
+      tipo_factura: tipo_factura, // Pass through if present
+      lineas_detalle_deuda: finalLines,
       lineas_metadatos: [
         { nombre: 'plan', dato: 'cupo_adicional' },
         { nombre: 'cuidador_id', dato: caregiverId }

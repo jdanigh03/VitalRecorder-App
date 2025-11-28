@@ -1,26 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'payment_service.dart';
+import 'subscription_service.dart';
 
 class PaymentLimitService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  final SubscriptionService _subscriptionService = SubscriptionService();
 
   /// Retorna true si el cuidador puede aceptar más pacientes según su límite efectivo
   Future<bool> canAcceptMorePatients() async {
     final user = _auth.currentUser;
     if (user == null) return false;
 
-    // Leer slots del usuario
-    final doc = await _db.collection('users').doc(user.uid).get();
-    final data = doc.data() ?? {};
-    final additional = (data['additional_patient_slots'] ?? 0) as int;
-    final maxDefault = (data['max_patients_default'] ?? 2) as int;
-    final limit = maxDefault + additional;
+    // Obtener límite actual (Base + Suscripción)
+    final limit = await _subscriptionService.getMaxPatients();
 
     // Contar pacientes asignados: subcolección de cuidadores en todos los pacientes
     // Simplificación: contamos entradas activas en subcolección de los pacientes del sistema que referencien el email del cuidador actual
-    // Si tienes una colección dedicada a relaciones, usa esa para performance.
     final allUsersSnapshot = await _db.collection('users').where('role', isEqualTo: 'user').get();
     int count = 0;
     for (final userDoc in allUsersSnapshot.docs) {

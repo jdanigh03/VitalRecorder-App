@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/cuidador_service.dart';
-import 'payments/paywall_beneficios_screen.dart';
+import '../services/subscription_service.dart';
+import 'subscription_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/invitacion_service.dart';
 import '../models/user.dart';
@@ -40,17 +41,11 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
 
   Future<void> _loadLimit() async {
     try {
-      // Lee slots del usuario actual
-      // users/{uid}.additional_patient_slots y max_patients_default
-      // Usamos CuidadorService.currentUser y Firestore directo para evitar más dependencias
-      final svc = _cuidadorService;
-      final uid = svc.currentUser?.uid;
-      if (uid == null) return;
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final data = doc.data() ?? {};
+      // Use SubscriptionService to get the correct limit based on active plan
+      final limit = await SubscriptionService().getMaxPatients();
       setState(() {
-        _additionalSlots = (data['additional_patient_slots'] ?? 0) as int;
-        _defaultLimit = (data['max_patients_default'] ?? 2) as int;
+        _defaultLimit = limit;
+        _additionalSlots = 0; // Reset this as it's now incorporated into the limit
       });
     } catch (_) {}
   }
@@ -143,7 +138,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-'${_filteredPatients.length} pacientes asignados (límite ${_defaultLimit + _additionalSlots})',
+'${_filteredPatients.length} pacientes asignados (límite $_defaultLimit)',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -402,7 +397,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                   onPressed: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
+                      MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
                     );
                     await _loadLimit();
                     await _loadPatients();
@@ -1036,6 +1031,52 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
   }
 
   void _showInvitePatientDialog() {
+    // 1. Check limit immediately
+    final currentCount = _pacientes.length;
+    final maxAllowed = _defaultLimit + _additionalSlots;
+    
+    print('DEBUG: Limit Check - Current: $currentCount, Max: $maxAllowed (Default: $_defaultLimit, Additional: $_additionalSlots)');
+    
+    if (currentCount >= maxAllowed) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.lock, color: Colors.orange),
+              SizedBox(width: 12),
+              Expanded(child: Text('Límite alcanzado')),
+            ],
+          ),
+          content: Text(
+            'Has alcanzado el límite de $maxAllowed pacientes. Desbloquea más cupos para continuar.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+                );
+                await _loadLimit();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Desbloquear cupos'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final emailController = TextEditingController();
     
     showDialog(
@@ -1138,49 +1179,6 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                 return;
               }
               
-              // Verificar límite de pacientes
-              final currentCount = _pacientes.length;
-              final maxAllowed = _defaultLimit + _additionalSlots;
-              
-              if (currentCount >= maxAllowed) {
-                Navigator.pop(context);
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Row(
-                      children: [
-                        Icon(Icons.lock, color: Colors.orange),
-                        SizedBox(width: 12),
-                        Expanded(child: Text('Límite alcanzado')),
-                      ],
-                    ),
-                    content: Text(
-                      'Has alcanzado el límite de $maxAllowed pacientes. Desbloquea más cupos para continuar.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Cancelar'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PaywallBeneficiosScreen()),
-                          );
-                          await _loadLimit();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
-                        child: Text('Desbloquear cupos'),
-                      ),
-                    ],
-                  ),
-                );
-                return;
-              }
               
               Navigator.pop(context);
               
