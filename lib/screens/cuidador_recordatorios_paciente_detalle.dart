@@ -459,7 +459,6 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
     final nextOccurrence = recordatorio.getNextOccurrence();
     final displayTime = nextOccurrence ?? recordatorio.startDate;
     
-    final ca = recordatorio.createdAt?.toLocal();
     final rd = DateTime(displayTime.year, displayTime.month, displayTime.day);
     final isHoy = rd.isAtSameMomentAs(hoy);
     
@@ -559,15 +558,35 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        recordatorio.title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E3A5F),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              recordatorio.title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E3A5F),
+                                decoration: recordatorio.isPaused ? TextDecoration.lineThrough : null,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (recordatorio.isPaused)
+                            Container(
+                              margin: EdgeInsets.only(left: 8),
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.grey,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'PAUSADO',
+                                style: TextStyle(color: Colors.white, fontSize: 10),
+                              ),
+                            ),
+                        ],
                       ),
                       if (recordatorio.description.isNotEmpty)
                         Padding(

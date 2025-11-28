@@ -358,6 +358,7 @@ class CuidadorService {
       double totalAdherence = 0;
       
       for (final reminder in recordatorios) {
+        if (reminder.isPaused) continue;
         final stats = await _reminderService.getReminderStats(reminder.id);
         totalConfirmations += stats['total'] as int;
         completedConfirmations += stats['confirmed'] as int;
