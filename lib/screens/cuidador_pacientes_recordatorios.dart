@@ -97,7 +97,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
                     ),
                   ),
                   Text(
-                    'Por Pacientes',
+                    'Por Usuarios',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -145,7 +145,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
           CircularProgressIndicator(color: Color(0xFF4A90E2)),
           SizedBox(height: 16),
           Text(
-            'Cargando pacientes y recordatorios...',
+            'Cargando usuarios y recordatorios...',
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[600],
@@ -193,7 +193,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
             ),
             SizedBox(height: 16),
             Text(
-              'No tienes pacientes asignados',
+              'No tienes usuarios asignados',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -203,7 +203,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
             ),
             SizedBox(height: 8),
             Text(
-              'Una vez que aceptes invitaciones de pacientes, podrás ver y gestionar sus recordatorios aquí',
+              'Una vez que aceptes invitaciones de usuarios, podrás ver y gestionar sus recordatorios aquí',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -262,7 +262,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
           SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildStatCard('Pacientes', totalPacientes, Colors.blue, Icons.people)),
+              Expanded(child: _buildStatCard('Usuarios', totalPacientes, Colors.blue, Icons.people)),
               SizedBox(width: 12),
               Expanded(child: _buildStatCard('Recordatorios', totalRecordatorios, Colors.green, Icons.schedule)),
             ],
@@ -501,7 +501,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
     if (_pacientes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No tienes pacientes asignados para crear recordatorios'),
+          content: Text('No tienes usuarios asignados para crear recordatorios'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -512,7 +512,7 @@ class _CuidadorPacientesRecordatoriosScreenState extends State<CuidadorPacientes
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          'Seleccionar Paciente',
+          'Seleccionar Usuario',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,

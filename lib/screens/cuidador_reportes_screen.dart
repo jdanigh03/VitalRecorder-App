@@ -171,7 +171,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           tabs: [
             Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
             Tab(text: 'Adherencia', icon: Icon(Icons.trending_up, size: 16)),
-            Tab(text: 'Por Paciente', icon: Icon(Icons.person, size: 16)),
+            Tab(text: 'Por Usuario', icon: Icon(Icons.person, size: 16)),
             Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
           ],
         ),
@@ -375,7 +375,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       childAspectRatio: 1.5,
       children: [
         _buildMetricCard(
-          'Total Pacientes',
+          'Total Usuarios',
           '${_stats['totalPacientes'] ?? 0}',
           Icons.people,
           Colors.blue,
@@ -491,7 +491,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           _buildAdherenceEvolution(),
           SizedBox(height: 20),
           
-          // Ranking de pacientes
+          // Ranking de usuarios
           _buildPatientRanking(),
           SizedBox(height: 20),
           
@@ -582,7 +582,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Ranking de Pacientes por Adherencia',
+              'Ranking de Usuarios por Adherencia',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             SizedBox(height: 16),
@@ -604,7 +604,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  title: Text(paciente.nombreCompleto.isEmpty ? 'Paciente ${index + 1}' : paciente.nombreCompleto),
+                  title: Text(paciente.nombreCompleto.isEmpty ? 'Usuario ${index + 1}' : paciente.nombreCompleto),
                   subtitle: Text('${paciente.email} • $totalRecordatorios recordatorios'),
                   trailing: Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -636,7 +636,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Análisis Individual por Paciente',
+            'Análisis Individual por Usuario',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
@@ -686,7 +686,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           ),
         ),
         title: Text(
-          paciente.nombreCompleto.isEmpty ? 'Paciente ${index + 1}' : paciente.nombreCompleto,
+          paciente.nombreCompleto.isEmpty ? 'Usuario ${index + 1}' : paciente.nombreCompleto,
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Row(

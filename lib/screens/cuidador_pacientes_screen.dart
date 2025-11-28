@@ -129,7 +129,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Mis Pacientes',
+                    'Mis Usuarios',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -138,7 +138,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-'${_filteredPatients.length} pacientes asignados (límite $_defaultLimit)',
+'${_filteredPatients.length} usuarios asignados (límite $_defaultLimit)',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -163,7 +163,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.person_add, color: Colors.white),
         label: const Text(
-          'Añadir Paciente',
+          'Añadir Usuario',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -223,7 +223,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Pacientes',
+              label: 'Usuarios',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.history_outlined),
@@ -249,7 +249,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
           CircularProgressIndicator(color: Color(0xFF4A90E2)),
           SizedBox(height: 16),
           Text(
-            'Cargando pacientes...',
+            'Cargando usuarios...',
             style: TextStyle(color: Colors.grey[600]),
           ),
         ],
@@ -286,7 +286,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Gestiona a tus pacientes',
+                  'Gestiona a tus usuarios',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
@@ -296,8 +296,8 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                 const SizedBox(height: 8),
                 Text(
                   _filteredPatients.isEmpty
-                      ? 'Sin pacientes asignados'
-                      : '${_filteredPatients.length} ${_filteredPatients.length == 1 ? 'paciente' : 'pacientes'}',
+                      ? 'Sin usuarios asignados'
+                      : '${_filteredPatients.length} ${_filteredPatients.length == 1 ? 'usuario' : 'usuarios'}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
@@ -314,7 +314,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     });
                   },
                   decoration: InputDecoration(
-                    hintText: 'Buscar pacientes...',
+                    hintText: 'Buscar usuarios...',
                     hintStyle: TextStyle(color: Colors.grey[600]),
                     prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
                     suffixIcon: _searchQuery.isNotEmpty
@@ -374,7 +374,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Capacidad de Pacientes',
+                        'Capacidad de Usuarios',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -456,7 +456,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                _searchQuery.isNotEmpty ? 'Sin resultados' : 'Sin pacientes asignados',
+                _searchQuery.isNotEmpty ? 'Sin resultados' : 'Sin usuarios asignados',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -467,8 +467,8 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
               const SizedBox(height: 8),
               Text(
                 _searchQuery.isNotEmpty 
-                    ? 'No se encontraron pacientes que coincidan con la búsqueda'
-                    : 'Los pacientes aparecerán aquí cuando te sean asignados',
+                    ? 'No se encontraron usuarios que coincidan con la búsqueda'
+                    : 'Los usuarios aparecerán aquí cuando te sean asignados',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.grey[600],
@@ -683,7 +683,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(patient.nombreCompleto.isEmpty ? 'Paciente' : patient.nombreCompleto),
+        title: Text(patient.nombreCompleto.isEmpty ? 'Usuario' : patient.nombreCompleto),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -783,7 +783,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text(
-            'Estadísticas de ${patient.persona.nombres.isEmpty ? 'Paciente' : patient.persona.nombres}',
+            'Estadísticas de ${patient.persona.nombres.isEmpty ? 'Usuario' : patient.persona.nombres}',
             style: TextStyle(fontSize: 16),
           ),
           content: SingleChildScrollView(

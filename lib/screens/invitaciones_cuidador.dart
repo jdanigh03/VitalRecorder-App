@@ -269,7 +269,7 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
                 ),
                 SizedBox(height: 12),
                 Text(
-                  'Invitaciones de Pacientes',
+                  'Invitaciones de Usuarios',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -593,7 +593,7 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
                             Icon(Icons.message, size: 16, color: Colors.blue[700]),
                             SizedBox(width: 8),
                             Text(
-                              'Mensaje del paciente:',
+                              'Mensaje del usuario:',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,

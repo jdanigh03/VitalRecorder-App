@@ -44,7 +44,7 @@ class ExportUtils {
           build: (pw.Context context) {
             return [
               // Encabezado
-              _buildHeader(patientName ?? 'Paciente', startDate, endDate),
+              _buildHeader(patientName ?? 'Usuario', startDate, endDate),
               pw.SizedBox(height: 20),
               
               // Resumen de adherencia
@@ -169,7 +169,7 @@ class ExportUtils {
           ),
           pw.SizedBox(height: 12),
           pw.Text(
-            'Paciente: $patientName',
+            'Usuario: $patientName',
             style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
           ),
           pw.Text(
@@ -525,7 +525,7 @@ class ExportUtils {
               alignment: pw.Alignment.centerRight,
               margin: const pw.EdgeInsets.only(top: 1.0 * PdfPageFormat.cm),
               child: pw.Text(
-                'VitalRecorder - Reporte Paciente - Página ${context.pageNumber} de ${context.pagesCount}',
+                'VitalRecorder - Reporte Usuario - Página ${context.pageNumber} de ${context.pagesCount}',
                 style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
               ),
             );
@@ -534,7 +534,7 @@ class ExportUtils {
       );
 
       final output = await getApplicationDocumentsDirectory();
-      final patientName = paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'Paciente';
+      final patientName = paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'Usuario';
       final fileName = 'reporte_${patientName.replaceAll(' ', '_')}_${_timestampFormat.format(DateTime.now())}.pdf';
       final file = File("${output.path}/$fileName");
       await file.writeAsBytes(await pdf.save());
@@ -564,9 +564,9 @@ class ExportUtils {
       
       // Encabezado básico
       if (options?['includeDetails'] == true) {
-        csvData.add(['Paciente', 'Email', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Estado', 'Frecuencia', 'Creado']);
+        csvData.add(['Usuario', 'Email', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Descripción', 'Tipo', 'Estado', 'Frecuencia', 'Creado']);
       } else {
-        csvData.add(['Paciente', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Estado']);
+        csvData.add(['Usuario', 'Fecha', 'Hora', 'Medicamento/Actividad', 'Estado']);
       }
 
       for (final reminder in sortedReminders) {
@@ -611,8 +611,8 @@ class ExportUtils {
 
       // Agregar hoja de estadísticas por paciente
       csvData.add([]); // Línea vacía
-      csvData.add(['=== ESTADÍSTICAS POR PACIENTE ===']);
-      csvData.add(['Paciente', 'Email', 'Total', 'Completados', 'Omitidos', 'Pendientes', 'Adherencia (%)']);
+      csvData.add(['=== ESTADÍSTICAS POR USUARIO ===']);
+      csvData.add(['Usuario', 'Email', 'Total', 'Completados', 'Omitidos', 'Pendientes', 'Adherencia (%)']);
 
       for (final paciente in pacientes) {
         // Buscar stats del paciente
@@ -746,7 +746,7 @@ class ExportUtils {
           ),
           pw.SizedBox(height: 12),
           pw.Text(
-            'Pacientes bajo cuidado: $totalPatients',
+            'Usuarios bajo cuidado: $totalPatients',
             style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
           ),
           pw.Text(
@@ -760,7 +760,7 @@ class ExportUtils {
           if (options != null) ...[
             pw.SizedBox(height: 8),
             pw.Text(
-              'Opciones: ${options['includeGraphs'] == true ? "Gráficos " : ""}${options['includeDetails'] == true ? "Detalles " : ""}${options['selectedPatient'] != null ? "Paciente específico " : ""}${options['selectedType'] != null ? "Tipo: ${options['selectedType']}" : ""}',
+              'Opciones: ${options['includeGraphs'] == true ? "Gráficos " : ""}${options['includeDetails'] == true ? "Detalles " : ""}${options['selectedPatient'] != null ? "Usuario específico " : ""}${options['selectedType'] != null ? "Tipo: ${options['selectedType']}" : ""}',
               style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600, fontStyle: pw.FontStyle.italic),
             ),
           ],
@@ -783,7 +783,7 @@ class ExportUtils {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'REPORTE INDIVIDUAL DE PACIENTE',
+                'REPORTE INDIVIDUAL DE USUARIO',
                 style: pw.TextStyle(
                   fontSize: 24,
                   fontWeight: pw.FontWeight.bold,

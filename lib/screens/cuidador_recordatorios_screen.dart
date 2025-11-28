@@ -248,7 +248,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Pacientes',
+              label: 'Usuarios',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.history_outlined),
@@ -426,7 +426,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
             ),
             const SizedBox(height: 24),
             Text(
-              'Cargando recordatorios de pacientes...',
+              'Cargando recordatorios de usuarios...',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -488,8 +488,8 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                   const SizedBox(height: 8),
                   Text(
                     _allReminders.isEmpty
-                        ? 'Sin recordatorios de pacientes'
-                        : '${_allReminders.length} ${_allReminders.length == 1 ? 'recordatorio' : 'recordatorios'} de pacientes',
+                        ? 'Sin recordatorios de usuarios'
+                        : '${_allReminders.length} ${_allReminders.length == 1 ? 'recordatorio' : 'recordatorios'} de usuarios',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
@@ -577,7 +577,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                             SizedBox(width: 8),
                             Flexible(
                               child: Text(
-                                'Recordatorios de Pacientes',
+                                'Recordatorios de Usuarios',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
@@ -604,7 +604,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                               ).then((_) => _loadAllReminders());
                             },
                             icon: Icon(Icons.folder_shared, size: 16),
-                            label: Text('Por Pacientes'),
+                            label: Text('Por Usuarios'),
                             style: TextButton.styleFrom(
                               foregroundColor: Color(0xFF4A90E2),
                               backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
@@ -725,7 +725,7 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
             Text(
               _searchQuery.isNotEmpty 
                   ? 'No se encontraron recordatorios que coincidan con la búsqueda'
-                  : 'Los recordatorios de tus pacientes aparecerán aquí',
+                  : 'Los recordatorios de tus usuarios aparecerán aquí',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],

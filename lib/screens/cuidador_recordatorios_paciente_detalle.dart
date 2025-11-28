@@ -263,7 +263,7 @@ class _CuidadorRecordatoriosPacienteDetalleScreenState extends State<CuidadorRec
               Icon(Icons.analytics, color: Color(0xFF4A90E2), size: 20),
               SizedBox(width: 8),
               Text(
-                'Estadísticas del Paciente',
+                'Estadísticas del Usuario',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

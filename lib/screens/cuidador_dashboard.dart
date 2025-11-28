@@ -551,7 +551,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
               Icon(Icons.info, color: Colors.white),
               SizedBox(width: 12),
               Expanded(
-                child: Text('Los pacientes deben completar sus propios recordatorios'),
+                child: Text('Los usuarios deben completar sus propios recordatorios'),
               ),
             ],
           ),
@@ -754,7 +754,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                           ? 'No hay recordatorios pendientes'
                           : pendingCount == 0
                               ? '¡Todos los recordatorios completados!'
-                              : 'Tus pacientes tienen $pendingCount ${pendingCount == 1 ? 'recordatorio pendiente' : 'recordatorios pendientes'}',
+                              : 'Tus usuarios tienen $pendingCount ${pendingCount == 1 ? 'recordatorio pendiente' : 'recordatorios pendientes'}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -874,7 +874,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 ).then((_) => _loadUserData());
                               },
                               icon: Icon(Icons.folder_shared, size: 18),
-                              label: Text('Por Pacientes'),
+                              label: Text('Por Usuarios'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                                 backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
@@ -909,7 +909,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 );
                               },
                               icon: Icon(Icons.people, size: 18),
-                              label: Text('Pacientes'),
+                              label: Text('Usuarios'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                               ),
@@ -946,7 +946,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.people, color: Colors.white),
         label: const Text(
-          'Ver Pacientes',
+          'Ver Usuarios',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -983,7 +983,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Pacientes',
+              label: 'Usuarios',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.schedule_outlined),
@@ -1013,7 +1013,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 24),
             Text(
-              'Cargando recordatorios de pacientes...',
+              'Cargando recordatorios de usuarios...',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -1047,7 +1047,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 24),
             Text(
-              'No hay recordatorios de pacientes hoy',
+              'No hay recordatorios de usuarios hoy',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -1057,7 +1057,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 8),
             Text(
-              'Tus pacientes no tienen recordatorios programados para hoy',
+              'Tus usuarios no tienen recordatorios programados para hoy',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -1075,7 +1075,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 );
               },
               icon: Icon(Icons.people),
-              label: Text('Ver Mis Pacientes'),
+              label: Text('Ver Mis Usuarios'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF4A90E2),
                 foregroundColor: Colors.white,
@@ -1201,7 +1201,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                         FutureBuilder<String>(
                           future: _getPatientName(reminder.userId ?? ''),
                           builder: (context, snapshot) {
-                            final patientName = snapshot.data ?? 'Paciente';
+                            final patientName = snapshot.data ?? 'Usuario';
                             return Container(
                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
@@ -1405,11 +1405,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       final pacientes = await _cuidadorService.getPacientes();
       final paciente = pacientes.firstWhere(
         (p) => p.userId == userId,
-        orElse: () => throw Exception('Paciente no encontrado'),
+        orElse: () => throw Exception('Usuario no encontrado'),
       );
       return paciente.persona.nombres;
     } catch (e) {
-      return 'Paciente';
+      return 'Usuario';
     }
   }
 
