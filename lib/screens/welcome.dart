@@ -448,7 +448,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Bienvenido',
+                            'Usuario',
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 12,

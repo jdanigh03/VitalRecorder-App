@@ -22,9 +22,11 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   bool _isLoading = true;
   List<ReminderNew> _allReminders = [];
   List<ReminderNew> _filteredReminders = [];
+  List<UserModel> _patients = [];
   String _searchQuery = '';
   String _selectedFilter = 'Todos';
   String _selectedStatus = 'Todos';
+  String? _selectedPatientId; // null = todos los pacientes
 
   final List<String> _filterOptions = ['Todos', 'Medicación', 'Tarea', 'Cita'];
   final List<String> _statusOptions = ['Todos', 'Pendientes', 'Completados', 'Vencidos', 'Pausados'];
@@ -45,8 +47,12 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
   Future<void> _loadAllReminders() async {
     setState(() => _isLoading = true);
     try {
+      // Cargar pacientes y recordatorios en paralelo
+      final patients = await _cuidadorService.getPacientes();
       final reminders = await _cuidadorService.getAllRemindersFromPatients();
+      
       setState(() {
+        _patients = patients;
         _allReminders = reminders;
         _applyFilters();
         _isLoading = false;
@@ -65,6 +71,11 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
 
   void _applyFilters() {
     List<ReminderNew> filtered = List.from(_allReminders);
+    
+    // Filtrar por paciente
+    if (_selectedPatientId != null) {
+      filtered = filtered.where((reminder) => reminder.userId == _selectedPatientId).toList();
+    }
     
     // Filtrar por búsqueda
     if (_searchQuery.isNotEmpty) {
@@ -106,6 +117,25 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
     setState(() {
       _filteredReminders = filtered;
     });
+  }
+
+  String _getPatientName(String? userId) {
+    if (userId == null) return 'Desconocido';
+    final patient = _patients.firstWhere(
+      (p) => p.id == userId,
+      orElse: () => UserModel(
+        id: userId,
+        email: '',
+        role: 'user',
+        persona: UserPersona(
+          nombres: 'Paciente',
+          apellidos: '',
+        ),
+        settings: UserSettings(telefono: ''),
+        createdAt: DateTime.now(),
+      ),
+    );
+    return patient.persona.nombres;
   }
 
   @override
@@ -529,6 +559,94 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                     ),
                   ),
                   const SizedBox(height: 16),
+                  
+                  // Filtro por paciente
+                  if (_patients.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_outline, color: Colors.grey[700], size: 20),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Filtrar por paciente:',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButton<String?>(
+                              value: _selectedPatientId,
+                              isExpanded: true,
+                              underline: Container(),
+                              style: TextStyle(
+                                color: Color(0xFF1E3A5F),
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              icon: Icon(Icons.arrow_drop_down, color: Color(0xFF4A90E2)),
+                              items: [
+                                DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('Todos los pacientes'),
+                                ),
+                                ..._patients.map((patient) {
+                                  final patientCount = _allReminders
+                                      .where((r) => r.userId == patient.id)
+                                      .length;
+                                  return DropdownMenuItem<String?>(
+                                    value: patient.id,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            patient.persona.nombres,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Color(0xFF4A90E2).withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            '$patientCount',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF1E3A5F),
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedPatientId = value;
+                                  _applyFilters();
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  
                   Row(
                     children: [
                       _buildStatCard(
@@ -834,14 +952,52 @@ class _CuidadorRecordatoriosScreenState extends State<CuidadorRecordatoriosScree
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          reminder.title,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A5F),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                reminder.title,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E3A5F),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // Nombre del paciente
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF4A90E2).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: Color(0xFF4A90E2).withOpacity(0.3),
+                              width: 1,
+                            ),
                           ),
-                          overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.person,
+                                size: 14,
+                                color: Color(0xFF4A90E2),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                _getPatientName(reminder.userId),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1E3A5F),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(

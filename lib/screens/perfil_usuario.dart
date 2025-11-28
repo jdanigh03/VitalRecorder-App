@@ -24,11 +24,9 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   // Variables de estado
   DateTime? _fechaNacimiento;
   String? _sexoSeleccionado;
-  int _intensidadVibracion = 2;
-  bool _modoSilencio = false;
-  bool _notificarAFamiliar = false;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isEditMode = false; // Controla si está en modo edición
 
   final List<String> _opcionesSexo = ['Masculino', 'Femenino', 'Otro', 'Prefiero no decir'];
 
@@ -131,9 +129,6 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
             : null;
         _telefonoController.text = _currentUserData!.settings.telefono;
         _loadFamiliarEmails(_currentUserData!.settings.familiarEmails);
-        _intensidadVibracion = _currentUserData!.settings.intensidadVibracion;
-        _modoSilencio = _currentUserData!.settings.modoSilencio;
-        _notificarAFamiliar = _currentUserData!.settings.notificarAFamiliar;
       } else {
         // Si no hay datos en Firestore, usar valores predeterminados
         _nombresController.text = userInfo['nombre'] ?? 'Usuario';
@@ -142,9 +137,6 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         _sexoSeleccionado = null;
         _telefonoController.text = '';
         _loadFamiliarEmails([]);
-        _intensidadVibracion = 2;
-        _modoSilencio = false;
-        _notificarAFamiliar = false;
         
         // Crear usuario inicial si no existe
         await _userService.createInitialUser();
@@ -182,6 +174,9 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
       }
 
       // Crear objeto UserModel con todos los datos
+      // Mantener las configuraciones existentes del usuario
+      final currentSettings = _currentUserData?.settings ?? UserSettings(telefono: '');
+      
       final updatedUser = UserModel(
         email: _userEmail,
         persona: UserPersona(
@@ -193,9 +188,10 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         settings: UserSettings(
           telefono: _telefonoController.text.trim(),
           familiarEmails: familiarEmailsList,
-          intensidadVibracion: _intensidadVibracion,
-          modoSilencio: _modoSilencio,
-          notificarAFamiliar: _notificarAFamiliar,
+          // Mantener las configuraciones existentes
+          intensidadVibracion: currentSettings.intensidadVibracion,
+          modoSilencio: currentSettings.modoSilencio,
+          notificarAFamiliar: currentSettings.notificarAFamiliar,
         ),
         createdAt: _currentUserData?.createdAt ?? DateTime.now(),
       );
@@ -203,7 +199,12 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
       // Guardar en Firestore
       final success = await _userService.createOrUpdateUser(updatedUser);
       
-      setState(() => _isSaving = false);
+      setState(() {
+        _isSaving = false;
+        if (success) {
+          _isEditMode = false; // Salir del modo edición al guardar
+        }
+      });
       
       if (success) {
         _currentUserData = updatedUser;
@@ -316,7 +317,21 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
+        actions: _isEditMode ? [
+          // Botón cancelar en modo edición
+          TextButton(
+            onPressed: _isSaving ? null : () {
+              setState(() {
+                _isEditMode = false;
+                _loadUserData(); // Recargar datos originales
+              });
+            },
+            child: Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+          // Botón guardar en modo edición
           IconButton(
             icon: _isSaving 
                 ? SizedBox(
@@ -329,8 +344,9 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                   )
                 : Icon(Icons.save, color: Colors.white),
             onPressed: _isSaving ? null : _saveUserData,
+            tooltip: 'Guardar cambios',
           ),
-        ],
+        ] : null,
       ),
       body: Form(
         key: _formKey,
@@ -396,38 +412,13 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                 ],
               ),
               SizedBox(height: 24),
-              _buildSectionCard(
-                'Configuraciones',
-                Icons.settings,
-                Color(0xFF9B59B6),
-                [
-                  _buildIntensidadVibracion(),
-                  SizedBox(height: 16),
-                  _buildSwitchTile(
-                    title: 'Modo silencio',
-                    subtitle: 'Desactivar sonidos de notificación',
-                    icon: Icons.volume_off,
-                    value: _modoSilencio,
-                    onChanged: (value) => setState(() => _modoSilencio = value),
-                  ),
-                  SizedBox(height: 8),
-                  _buildSwitchTile(
-                    title: 'Notificar a familiar',
-                    subtitle: 'Enviar copia de notificaciones al familiar',
-                    icon: Icons.notifications_active,
-                    value: _notificarAFamiliar,
-                    onChanged: (value) => setState(() => _notificarAFamiliar = value),
-                  ),
-                ],
-              ),
-              SizedBox(height: 24),
               _buildInfoCard(),
               SizedBox(height: 80), // Espacio para el botón flotante
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: _isEditMode ? FloatingActionButton.extended(
         onPressed: _isSaving ? null : _saveUserData,
         backgroundColor: _isSaving ? Colors.grey : Color(0xFF4A90E2),
         icon: _isSaving 
@@ -442,6 +433,18 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
             : Icon(Icons.save, color: Colors.white),
         label: Text(
           _isSaving ? 'Guardando...' : 'Guardar Cambios',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ) : FloatingActionButton.extended(
+        onPressed: () {
+          setState(() {
+            _isEditMode = true;
+          });
+        },
+        backgroundColor: Color(0xFF4A90E2),
+        icon: Icon(Icons.edit, color: Colors.white),
+        label: Text(
+          'Editar Información',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
@@ -519,11 +522,12 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
           controller: controller,
           keyboardType: keyboardType,
           validator: validator,
+          enabled: _isEditMode,
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: Color(0xFF4A90E2)),
+            prefixIcon: Icon(icon, color: _isEditMode ? Color(0xFF4A90E2) : Colors.grey),
             filled: true,
-            fillColor: Color(0xFFF8F9FA),
+            fillColor: _isEditMode ? Color(0xFFF8F9FA) : Colors.grey[100],
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -531,6 +535,10 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -561,17 +569,17 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         ),
         SizedBox(height: 8),
         InkWell(
-          onTap: _selectFechaNacimiento,
+          onTap: _isEditMode ? _selectFechaNacimiento : null,
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             decoration: BoxDecoration(
-              color: Color(0xFFF8F9FA),
+              color: _isEditMode ? Color(0xFFF8F9FA) : Colors.grey[100],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!, width: 1),
+              border: Border.all(color: Colors.grey[_isEditMode ? 300 : 200]!, width: 1),
             ),
             child: Row(
               children: [
-                Icon(Icons.calendar_today, color: Color(0xFF4A90E2)),
+                Icon(Icons.calendar_today, color: _isEditMode ? Color(0xFF4A90E2) : Colors.grey),
                 SizedBox(width: 16),
                 Expanded(
                   child: Text(
@@ -586,7 +594,8 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                     ),
                   ),
                 ),
-                Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+                if (_isEditMode)
+                  Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
               ],
             ),
           ),
@@ -611,22 +620,22 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         Container(
           padding: EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: Color(0xFFF8F9FA),
+            color: _isEditMode ? Color(0xFFF8F9FA) : Colors.grey[100],
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!, width: 1),
+            border: Border.all(color: Colors.grey[_isEditMode ? 300 : 200]!, width: 1),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _sexoSeleccionado,
               hint: Row(
                 children: [
-                  Icon(Icons.person_outline, color: Color(0xFF4A90E2)),
+                  Icon(Icons.person_outline, color: _isEditMode ? Color(0xFF4A90E2) : Colors.grey),
                   SizedBox(width: 16),
                   Text('Seleccionar sexo', style: TextStyle(color: Colors.grey[600])),
                 ],
               ),
               isExpanded: true,
-              items: _opcionesSexo.map((String opcion) {
+              items: _isEditMode ? _opcionesSexo.map((String opcion) {
                 return DropdownMenuItem<String>(
                   value: opcion,
                   child: Row(
@@ -639,117 +648,16 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                     ],
                   ),
                 );
-              }).toList(),
-              onChanged: (String? newValue) {
+              }).toList() : null,
+              onChanged: _isEditMode ? (String? newValue) {
                 setState(() {
                   _sexoSeleccionado = newValue;
                 });
-              },
+              } : null,
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildIntensidadVibracion() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.vibration, color: Color(0xFF9B59B6), size: 20),
-            SizedBox(width: 8),
-            Text(
-              'Intensidad de vibración',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1E3A5F),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 8),
-        Text(
-          'Nivel $_intensidadVibracion',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
-        Slider(
-          value: _intensidadVibracion.toDouble(),
-          min: 0,
-          max: 5,
-          divisions: 5,
-          activeColor: Color(0xFF9B59B6),
-          inactiveColor: Color(0xFF9B59B6).withOpacity(0.3),
-          onChanged: (value) {
-            setState(() {
-              _intensidadVibracion = value.round();
-            });
-          },
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Desactivada', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-            Text('Máxima', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required bool value,
-    required Function(bool) onChanged,
-  }) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Color(0xFF9B59B6), size: 24),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1E3A5F),
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: Color(0xFF9B59B6),
-          ),
-        ],
-      ),
     );
   }
 
@@ -768,11 +676,12 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
               ),
             ),
             Spacer(),
-            IconButton(
-              icon: Icon(Icons.add_circle_outline, color: Color(0xFF2ECC71)),
-              onPressed: _addEmailField,
-              tooltip: 'Agregar email',
-            ),
+            if (_isEditMode)
+              IconButton(
+                icon: Icon(Icons.add_circle_outline, color: Color(0xFF2ECC71)),
+                onPressed: _addEmailField,
+                tooltip: 'Agregar email',
+              ),
           ],
         ),
         SizedBox(height: 8),
@@ -793,6 +702,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                   child: TextFormField(
                     controller: _familiarEmailControllers[index],
                     keyboardType: TextInputType.emailAddress,
+                    enabled: _isEditMode,
                     validator: (value) {
                       if (value?.trim().isNotEmpty ?? false) {
                         final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
@@ -804,9 +714,9 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                     },
                     decoration: InputDecoration(
                       hintText: 'ejemplo@correo.com',
-                      prefixIcon: Icon(Icons.family_restroom, color: Color(0xFF2ECC71)),
+                      prefixIcon: Icon(Icons.family_restroom, color: _isEditMode ? Color(0xFF2ECC71) : Colors.grey),
                       filled: true,
-                      fillColor: Color(0xFFF8F9FA),
+                      fillColor: _isEditMode ? Color(0xFFF8F9FA) : Colors.grey[100],
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -814,6 +724,10 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -827,7 +741,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                     ),
                   ),
                 ),
-                if (_familiarEmailControllers.length > 1)
+                if (_isEditMode && _familiarEmailControllers.length > 1)
                   Padding(
                     padding: EdgeInsets.only(left: 8),
                     child: IconButton(
