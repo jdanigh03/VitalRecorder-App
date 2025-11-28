@@ -1,6 +1,3 @@
-// ========================================
-// ARCHIVO: lib/screens/register_screen.dart
-// ========================================
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -25,7 +22,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _obscure = true;
   DateTime? _birthDate;
-  String _selectedRole = 'user'; // 'user' para paciente, 'cuidador' para cuidador
+  String _selectedRole = 'cuidador'; // 'user' para paciente, 'cuidador' para cuidador
 
   @override
   void dispose() {
@@ -281,13 +278,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Nombre Completo',
-                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
                     ),
                     const SizedBox(height: 8),
                     TextFormField(

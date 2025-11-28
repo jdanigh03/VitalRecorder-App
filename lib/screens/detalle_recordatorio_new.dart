@@ -6,8 +6,13 @@ import '../reminder_service_new.dart';
 
 class DetalleRecordatorioNewScreen extends StatefulWidget {
   final ReminderNew reminder;
+  final DateTime? initialDate;
 
-  const DetalleRecordatorioNewScreen({Key? key, required this.reminder}) : super(key: key);
+  const DetalleRecordatorioNewScreen({
+    Key? key, 
+    required this.reminder,
+    this.initialDate,
+  }) : super(key: key);
 
   @override
   State<DetalleRecordatorioNewScreen> createState() => _DetalleRecordatorioNewScreenState();
@@ -18,6 +23,8 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
   late ReminderNew _currentReminder;
   bool _isLoading = false;
   List<ReminderConfirmation> _confirmations = [];
+  List<ReminderConfirmation> _filteredConfirmations = [];
+  bool _showAllHistory = false;
   Map<String, dynamic>? _stats;
 
   final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy');
@@ -28,6 +35,8 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
   void initState() {
     super.initState();
     _currentReminder = widget.reminder;
+    // Si no hay fecha inicial, mostrar todo por defecto
+    _showAllHistory = widget.initialDate == null;
     _loadReminderData();
   }
 
@@ -46,6 +55,7 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
       
       // Cargar confirmaciones del recordatorio
       _confirmations = await _reminderService.getConfirmations(_currentReminder.id);
+      _filterConfirmations();
       
       // Cargar estadísticas
       _stats = await _reminderService.getReminderStats(_currentReminder.id);
@@ -63,6 +73,7 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
     try {
       // Cargar confirmaciones del recordatorio
       _confirmations = await _reminderService.getConfirmations(_currentReminder.id);
+      _filterConfirmations();
       
       // Cargar estadísticas
       _stats = await _reminderService.getReminderStats(_currentReminder.id);
@@ -72,6 +83,20 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
       print('Error cargando confirmaciones: $e');
       setState(() => _isLoading = false);
     }
+  }
+  void _filterConfirmations() {
+    if (_showAllHistory || widget.initialDate == null) {
+      _filteredConfirmations = List.from(_confirmations);
+    } else {
+      _filteredConfirmations = _confirmations.where((c) {
+        return c.scheduledTime.year == widget.initialDate!.year &&
+            c.scheduledTime.month == widget.initialDate!.month &&
+            c.scheduledTime.day == widget.initialDate!.day;
+      }).toList();
+    }
+    
+    // Ordenar por fecha descendente
+    _filteredConfirmations.sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
   }
 
   @override
@@ -397,16 +422,59 @@ class _DetalleRecordatorioNewScreenState extends State<DetalleRecordatorioNewScr
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Historial de Confirmaciones',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1E3A5F),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                'Historial de Confirmaciones',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A5F),
+                ),
+              ),
+            ),
+            if (!_showAllHistory && widget.initialDate != null)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _showAllHistory = true;
+                    _filterConfirmations();
+                  });
+                },
+                child: const Text('Ver todo'),
+              ),
+          ],
         ),
+        if (!_showAllHistory && widget.initialDate != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Mostrando solo: ${_dayFormatter.format(widget.initialDate!)}',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
         SizedBox(height: 12),
-        ..._confirmations.map((confirmation) => _buildConfirmationCard(confirmation)),
+        if (_filteredConfirmations.isEmpty)
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                'No hay confirmaciones para esta fecha',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+          )
+        else
+          ..._filteredConfirmations.map((confirmation) => _buildConfirmationCard(confirmation)),
       ],
     );
   }

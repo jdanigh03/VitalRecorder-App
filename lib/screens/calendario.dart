@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../models/reminder_new.dart';
+import '../models/reminder_occurrence.dart';
 import '../reminder_service_new.dart';
 import '../utils/export_utils.dart';
 import 'detalle_recordatorio_new.dart';
@@ -93,11 +94,21 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     });
   }
 
-  List<ReminderNew> _getRemindersForDay(DateTime day) {
-    // Usar el nuevo método para verificar ocurrencias
-    return _filteredReminders.where((reminder) {
-      return reminder.hasOccurrencesOnDay(day);
-    }).toList()..sort((a, b) => a.startDate.compareTo(b.startDate));
+  List<ReminderOccurrence> _getRemindersForDay(DateTime day) {
+    List<ReminderOccurrence> occurrences = [];
+    
+    for (var reminder in _filteredReminders) {
+      final reminderOccurrences = reminder.calculateOccurrencesForDay(day);
+      for (var date in reminderOccurrences) {
+        occurrences.add(ReminderOccurrence(
+          reminder: reminder,
+          occurrenceDate: date,
+        ));
+      }
+    }
+    
+    occurrences.sort((a, b) => a.occurrenceDate.compareTo(b.occurrenceDate));
+    return occurrences;
   }
 
   Color _getReminderStatusColor(ReminderNew reminder) {
@@ -327,7 +338,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
       children: [
         Container(
           color: Colors.white,
-          child: TableCalendar<ReminderNew>(
+          child: TableCalendar<ReminderOccurrence>(
             firstDay: DateTime.now().subtract(const Duration(days: 365)),
             lastDay: DateTime.now().add(const Duration(days: 365)),
             focusedDay: _focusedDay,
@@ -360,7 +371,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                 color: Color(0xFF1E3A5F),
               ),
             ),
-            calendarBuilders: CalendarBuilders<ReminderNew>(
+            calendarBuilders: CalendarBuilders<ReminderOccurrence>(
               markerBuilder: (context, day, events) {
                 if (events.isEmpty) return null;
                 return Positioned(
@@ -423,7 +434,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
       children: [
         Container(
           color: Colors.white,
-          child: TableCalendar<ReminderNew>(
+          child: TableCalendar<ReminderOccurrence>(
             firstDay: DateTime.now().subtract(const Duration(days: 365)),
             lastDay: DateTime.now().add(const Duration(days: 365)),
             focusedDay: _focusedDay,
@@ -461,7 +472,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
               CalendarFormat.twoWeeks: '2 semanas',
               CalendarFormat.week: 'Semana',
             },
-            calendarBuilders: CalendarBuilders<ReminderNew>(
+            calendarBuilders: CalendarBuilders<ReminderOccurrence>(
               markerBuilder: (context, day, events) {
                 if (events.isEmpty) return null;
                 return Positioned(
@@ -524,8 +535,8 @@ class _CalendarioScreenState extends State<CalendarioScreen>
     );
   }
 
-  Widget _buildRemindersList(List<ReminderNew> reminders) {
-    if (reminders.isEmpty) {
+  Widget _buildRemindersList(List<ReminderOccurrence> occurrences) {
+    if (occurrences.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -553,15 +564,16 @@ class _CalendarioScreenState extends State<CalendarioScreen>
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: reminders.length,
+      itemCount: occurrences.length,
       itemBuilder: (context, index) {
-        final reminder = reminders[index];
-        return _buildReminderCard(reminder);
+        final occurrence = occurrences[index];
+        return _buildReminderCard(occurrence);
       },
     );
   }
 
-  Widget _buildReminderCard(ReminderNew reminder) {
+  Widget _buildReminderCard(ReminderOccurrence occurrence) {
+    final reminder = occurrence.reminder;
     final statusColor = _getReminderStatusColor(reminder);
     final statusIcon = _getReminderStatusIcon(reminder);
     
@@ -570,7 +582,10 @@ class _CalendarioScreenState extends State<CalendarioScreen>
         final result = await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => DetalleRecordatorioNewScreen(reminder: reminder),
+            builder: (context) => DetalleRecordatorioNewScreen(
+              reminder: reminder,
+              initialDate: occurrence.occurrenceDate,
+            ),
           ),
         );
         if (result != null) {
@@ -648,7 +663,7 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _timeFormatter.format(reminder.startDate),
+                        _timeFormatter.format(occurrence.occurrenceDate),
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],

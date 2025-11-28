@@ -5,26 +5,21 @@ import '../models/reminder_new.dart';
 import '../models/user.dart';
 import '../models/reminder_occurrence.dart';
 import '../reminder_service_new.dart';
+import '../services/cuidador_service.dart';
 import 'cuidador_reminder_detail_screen.dart';
 
-class CuidadorCalendarioPacienteScreen extends StatefulWidget {
-  final UserModel paciente;
-
-  const CuidadorCalendarioPacienteScreen({
-    Key? key,
-    required this.paciente,
-  }) : super(key: key);
+class CuidadorCalendarioScreen extends StatefulWidget {
+  const CuidadorCalendarioScreen({Key? key}) : super(key: key);
 
   @override
-  State<CuidadorCalendarioPacienteScreen> createState() =>
-      _CuidadorCalendarioPacienteScreenState();
+  State<CuidadorCalendarioScreen> createState() => _CuidadorCalendarioScreenState();
 }
 
-class _CuidadorCalendarioPacienteScreenState
-    extends State<CuidadorCalendarioPacienteScreen>
+class _CuidadorCalendarioScreenState extends State<CuidadorCalendarioScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   final ReminderServiceNew _reminderService = ReminderServiceNew();
+  final CuidadorService _cuidadorService = CuidadorService();
 
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
@@ -32,12 +27,11 @@ class _CuidadorCalendarioPacienteScreenState
 
   List<ReminderNew> _allReminders = [];
   List<ReminderNew> _filteredReminders = [];
-  String? _selectedMedicament;
+  List<UserModel> _pacientes = [];
+  UserModel? _selectedPaciente; // Null means "All patients"
   bool _isLoading = true;
 
   // Formatters
-  final DateFormat _dayFormatter = DateFormat('d');
-  final DateFormat _monthFormatter = DateFormat('MMM');
   final DateFormat _timeFormatter = DateFormat('HH:mm');
   final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy');
 
@@ -45,7 +39,7 @@ class _CuidadorCalendarioPacienteScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadReminders();
+    _loadData();
   }
 
   @override
@@ -54,18 +48,24 @@ class _CuidadorCalendarioPacienteScreenState
     super.dispose();
   }
 
-  Future<void> _loadReminders() async {
+  Future<void> _loadData() async {
     try {
       setState(() => _isLoading = true);
-      
-      // Cargar recordatorios del paciente específico
-      final reminders = await _reminderService.getRemindersByPatient(
-        widget.paciente.userId!,
-      );
-      
+
+      // 1. Load Patients
+      final pacientes = await _cuidadorService.getPacientes();
+      _pacientes = pacientes;
+
+      // 2. Load Reminders for ALL patients
+      List<ReminderNew> allReminders = [];
+      for (final paciente in pacientes) {
+        final reminders = await _reminderService.getRemindersByPatient(paciente.userId!);
+        allReminders.addAll(reminders);
+      }
+
       setState(() {
-        _allReminders = reminders;
-        _filteredReminders = reminders;
+        _allReminders = allReminders;
+        _applyFilter(); // Initial filter (shows all)
         _isLoading = false;
       });
     } catch (e) {
@@ -73,7 +73,7 @@ class _CuidadorCalendarioPacienteScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error cargando recordatorios: $e'),
+            content: Text('Error cargando datos: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -81,15 +81,13 @@ class _CuidadorCalendarioPacienteScreenState
     }
   }
 
-  void _filterReminders(String? medicament) {
+  void _applyFilter() {
     setState(() {
-      _selectedMedicament = medicament;
-      if (medicament == null || medicament.isEmpty) {
+      if (_selectedPaciente == null) {
         _filteredReminders = _allReminders;
       } else {
         _filteredReminders = _allReminders
-            .where((reminder) =>
-                reminder.title.toLowerCase().contains(medicament.toLowerCase()))
+            .where((r) => r.userId == _selectedPaciente!.userId)
             .toList();
       }
     });
@@ -113,34 +111,25 @@ class _CuidadorCalendarioPacienteScreenState
   }
 
   Color _getReminderStatusColor(ReminderNew reminder) {
-    // Verificar si está pausado primero
     if (reminder.isPaused) return Colors.grey;
-    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Colors.grey;
-
     final now = DateTime.now();
     return nextOccurrence.isBefore(now) ? Colors.red : Colors.orange;
   }
 
   IconData _getReminderStatusIcon(ReminderNew reminder) {
-    // Verificar si está pausado primero
     if (reminder.isPaused) return Icons.pause;
-    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return Icons.check_circle;
-
     final now = DateTime.now();
     return nextOccurrence.isBefore(now) ? Icons.cancel : Icons.access_time;
   }
 
   String _getReminderStatusText(ReminderNew reminder) {
-    // Verificar si está pausado primero
     if (reminder.isPaused) return 'PAUSADO';
-    
     final nextOccurrence = reminder.getNextOccurrence();
     if (nextOccurrence == null) return 'FINALIZADO';
-
     final now = DateTime.now();
     return nextOccurrence.isBefore(now) ? 'VENCIDO' : 'PENDIENTE';
   }
@@ -161,78 +150,100 @@ class _CuidadorCalendarioPacienteScreenState
     }
   }
 
+  String _getPatientName(String userId) {
+    final paciente = _pacientes.firstWhere(
+      (p) => p.userId == userId,
+      orElse: () => UserModel(
+        id: '',
+        email: '',
+        role: '',
+        persona: UserPersona(nombres: 'Desconocido', apellidos: '', fechaNac: DateTime.now()),
+        settings: UserSettings(telefono: ''),
+        createdAt: DateTime.now(),
+      ),
+    );
+    return paciente.persona.nombres;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A5F),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Calendario',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            Text(
-              widget.paciente.nombreCompleto,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-              ),
-            ),
-          ],
+        title: const Text(
+          'Calendario General',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          // Filtro dropdown
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: PopupMenuButton<String>(
-              icon: const Icon(Icons.filter_list, color: Colors.white),
-              onSelected: _filterReminders,
-              itemBuilder: (context) {
-                final medicaments =
-                    _allReminders.map((r) => r.title).toSet().toList()..sort();
-
-                return [
-                  const PopupMenuItem<String>(
-                    value: null,
-                    child: Text('Todos los recordatorios'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(100),
+          child: Column(
+            children: [
+              // Patient Filter Dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: const Color(0xFF1E3A5F),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  ...medicaments.map((med) => PopupMenuItem<String>(
-                        value: med,
-                        child: Text(med),
-                      )),
-                ];
-              },
-            ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<UserModel?>(
+                      value: _selectedPaciente,
+                      dropdownColor: const Color(0xFF1E3A5F),
+                      icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                      isExpanded: true,
+                      hint: const Text(
+                        'Todos los pacientes',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                      items: [
+                        const DropdownMenuItem<UserModel?>(
+                          value: null,
+                          child: Text('Todos los pacientes'),
+                        ),
+                        ..._pacientes.map((paciente) {
+                          return DropdownMenuItem<UserModel?>(
+                            value: paciente,
+                            child: Text(paciente.nombreCompleto),
+                          );
+                        }).toList(),
+                      ],
+                      onChanged: (UserModel? newValue) {
+                        setState(() {
+                          _selectedPaciente = newValue;
+                          _applyFilter();
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              TabBar(
+                controller: _tabController,
+                indicatorColor: Colors.white,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                tabs: const [
+                  Tab(text: 'AGENDA'),
+                  Tab(text: 'SEMANAL'),
+                  Tab(text: 'MENSUAL'),
+                ],
+              ),
+            ],
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(text: 'AGENDA'),
-            Tab(text: 'SEMANAL'),
-            Tab(text: 'MENSUAL'),
-          ],
         ),
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF1E3A5F),
-              ),
+              child: CircularProgressIndicator(color: Color(0xFF1E3A5F)),
             )
           : TabBarView(
               controller: _tabController,
@@ -248,7 +259,6 @@ class _CuidadorCalendarioPacienteScreenState
   Widget _buildAgendaView() {
     return Column(
       children: [
-        // Selector de fecha
         Container(
           padding: const EdgeInsets.all(16),
           color: Colors.white,
@@ -258,8 +268,7 @@ class _CuidadorCalendarioPacienteScreenState
               IconButton(
                 onPressed: () {
                   setState(() {
-                    _selectedDay =
-                        _selectedDay.subtract(const Duration(days: 1));
+                    _selectedDay = _selectedDay.subtract(const Duration(days: 1));
                     _focusedDay = _selectedDay;
                   });
                 },
@@ -270,8 +279,7 @@ class _CuidadorCalendarioPacienteScreenState
                   final date = await showDatePicker(
                     context: context,
                     initialDate: _selectedDay,
-                    firstDate:
-                        DateTime.now().subtract(const Duration(days: 365)),
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
                     lastDate: DateTime.now().add(const Duration(days: 365)),
                     builder: (context, child) {
                       return Theme(
@@ -324,7 +332,6 @@ class _CuidadorCalendarioPacienteScreenState
             ],
           ),
         ),
-        // Lista de recordatorios del día
         Expanded(
           child: _buildRemindersList(_getRemindersForDay(_selectedDay)),
         ),
@@ -343,23 +350,24 @@ class _CuidadorCalendarioPacienteScreenState
             focusedDay: _focusedDay,
             calendarFormat: CalendarFormat.week,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            eventLoader: _getRemindersForDay,
+            eventLoader: (day) {
+              // TableCalendar expects a list of events. We can use the reminders directly here
+              // just for the count (marker), or use the occurrences. 
+              // Using reminders directly is safer for markers to avoid duplicates if we just want "dots".
+              // But the user wants "number of activities". 
+              // If a reminder has 3 occurrences in a day, should it show 3? 
+              // The previous implementation used `_getRemindersForDay` which returned reminders.
+              // If we want to show TOTAL occurrences, we should use the new logic.
+              return _getRemindersForDay(day); 
+            },
             startingDayOfWeek: StartingDayOfWeek.monday,
             locale: 'es_ES',
             calendarStyle: const CalendarStyle(
               outsideDaysVisible: false,
-              markersMaxCount: 1,
-              markerDecoration: BoxDecoration(
-                color: Colors.transparent,
-              ),
-              todayDecoration: BoxDecoration(
-                color: Color(0xFF4A90E2),
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Color(0xFF1E3A5F),
-                shape: BoxShape.circle,
-              ),
+              markersMaxCount: 3,
+              markerDecoration: BoxDecoration(color: Color(0xFF1E3A5F), shape: BoxShape.circle),
+              todayDecoration: BoxDecoration(color: Color(0xFF4A90E2), shape: BoxShape.circle),
+              selectedDecoration: BoxDecoration(color: Color(0xFF1E3A5F), shape: BoxShape.circle),
             ),
             headerStyle: const HeaderStyle(
               formatButtonVisible: false,
@@ -439,23 +447,15 @@ class _CuidadorCalendarioPacienteScreenState
             focusedDay: _focusedDay,
             calendarFormat: _calendarFormat,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            eventLoader: _getRemindersForDay,
+            eventLoader: (day) => _getRemindersForDay(day),
             startingDayOfWeek: StartingDayOfWeek.monday,
             locale: 'es_ES',
             calendarStyle: const CalendarStyle(
               outsideDaysVisible: false,
-              markersMaxCount: 1,
-              markerDecoration: BoxDecoration(
-                color: Colors.transparent,
-              ),
-              todayDecoration: BoxDecoration(
-                color: Color(0xFF4A90E2),
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Color(0xFF1E3A5F),
-                shape: BoxShape.circle,
-              ),
+              markersMaxCount: 3,
+              markerDecoration: BoxDecoration(color: Color(0xFF1E3A5F), shape: BoxShape.circle),
+              todayDecoration: BoxDecoration(color: Color(0xFF4A90E2), shape: BoxShape.circle),
+              selectedDecoration: BoxDecoration(color: Color(0xFF1E3A5F), shape: BoxShape.circle),
             ),
             headerStyle: const HeaderStyle(
               formatButtonVisible: true,
@@ -540,20 +540,11 @@ class _CuidadorCalendarioPacienteScreenState
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.event_available,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.event_available, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              _selectedMedicament != null
-                  ? 'No hay recordatorios de $_selectedMedicament para este día'
-                  : 'No hay recordatorios para este día',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
+              'No hay recordatorios para este día',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
           ],
@@ -575,20 +566,34 @@ class _CuidadorCalendarioPacienteScreenState
     final reminder = occurrence.reminder;
     final statusColor = _getReminderStatusColor(reminder);
     final statusIcon = _getReminderStatusIcon(reminder);
+    final patientName = _getPatientName(reminder.userId ?? '');
 
     return GestureDetector(
       onTap: () async {
+        // Find the patient object for this reminder
+        final paciente = _pacientes.firstWhere(
+          (p) => p.userId == reminder.userId,
+          orElse: () => UserModel(
+        id: '',
+        email: '',
+        role: '',
+        persona: UserPersona(nombres: 'Desconocido', apellidos: '', fechaNac: DateTime.now()),
+        settings: UserSettings(telefono: ''),
+        createdAt: DateTime.now(),
+          ),
+        );
+
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => CuidadorReminderDetailScreen(
               reminder: reminder,
-              paciente: widget.paciente,
+              paciente: paciente,
               initialDate: occurrence.occurrenceDate,
             ),
           ),
         );
-        _loadReminders();
+        _loadData(); // Reload when returning
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -604,15 +609,11 @@ class _CuidadorCalendarioPacienteScreenState
             ),
           ],
           border: Border(
-            left: BorderSide(
-              width: 4,
-              color: statusColor,
-            ),
+            left: BorderSide(width: 4, color: statusColor),
           ),
         ),
         child: Row(
           children: [
-            // Icono del tipo
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -626,11 +627,27 @@ class _CuidadorCalendarioPacienteScreenState
               ),
             ),
             const SizedBox(width: 16),
-            // Información del recordatorio
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Patient Name Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      patientName,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     reminder.title,
                     style: const TextStyle(
@@ -643,10 +660,7 @@ class _CuidadorCalendarioPacienteScreenState
                     const SizedBox(height: 4),
                     Text(
                       reminder.description,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -654,39 +668,17 @@ class _CuidadorCalendarioPacienteScreenState
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
+                      Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
                         _timeFormatter.format(occurrence.occurrenceDate),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Icon(
-                        Icons.repeat,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        reminder.intervalDisplayText,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 ],
               ),
             ),
-            // Estado del recordatorio
             Column(
               children: [
                 Container(
@@ -695,11 +687,7 @@ class _CuidadorCalendarioPacienteScreenState
                     color: statusColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    statusIcon,
-                    color: statusColor,
-                    size: 20,
-                  ),
+                  child: Icon(statusIcon, color: statusColor, size: 20),
                 ),
                 const SizedBox(height: 4),
                 Text(
