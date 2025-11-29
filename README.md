@@ -30,7 +30,6 @@
 - [Notificaciones](#-notificaciones)
 - [Contribuir](#-contribuir)
 - [Licencia](#-licencia)
-- [Contacto](#-contacto)
 
 ---
 
