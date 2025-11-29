@@ -377,10 +377,8 @@ class TypeDistributionChart extends StatelessWidget {
     switch (key.toLowerCase()) {
       case 'medicacion':
         return 'Medicación';
-      case 'tareas':
-        return 'Tareas';
-      case 'citas':
-        return 'Citas';
+      case 'actividad':
+        return 'Actividad';
       case 'otros':
         return 'Otros';
       default:

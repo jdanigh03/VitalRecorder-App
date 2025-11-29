@@ -85,14 +85,14 @@ class AnalyticsService with CacheableMixin {
         c.scheduledTime.isBefore(endOfToday)
       ).length;
 
-      // Distribución por tipos
+      // Distribución por tipos (Consolidado)
       final medicationCount = reminders.where((r) => 
         r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
       ).length;
-      final taskCount = reminders.where((r) => 
-        r.type.toLowerCase().contains('tarea') || r.type == 'Tarea'
-      ).length;
-      final appointmentCount = reminders.where((r) => 
+      
+      final activityCount = reminders.where((r) => 
+        r.type.toLowerCase().contains('activ') || r.type == 'Actividad' ||
+        r.type.toLowerCase().contains('tarea') || r.type == 'Tarea' ||
         r.type.toLowerCase().contains('cita') || r.type == 'Cita'
       ).length;
 
@@ -109,8 +109,7 @@ class AnalyticsService with CacheableMixin {
         'pendientes': pendingCount,
         'recordatoriosPorTipo': {
           'medicacion': medicationCount,
-          'tareas': taskCount,
-          'citas': appointmentCount,
+          'actividad': activityCount,
         },
       };
     });
@@ -223,10 +222,10 @@ class AnalyticsService with CacheableMixin {
         final medicationCount = patientReminders.where((r) => 
           r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
         ).length;
-        final taskCount = patientReminders.where((r) => 
-          r.type.toLowerCase().contains('tarea') || r.type == 'Tarea'
-        ).length;
-        final appointmentCount = patientReminders.where((r) => 
+        
+        final activityCount = patientReminders.where((r) => 
+          r.type.toLowerCase().contains('activ') || r.type == 'Actividad' ||
+          r.type.toLowerCase().contains('tarea') || r.type == 'Tarea' ||
           r.type.toLowerCase().contains('cita') || r.type == 'Cita'
         ).length;
         
@@ -240,8 +239,7 @@ class AnalyticsService with CacheableMixin {
           'adherencia': adherence,
           'recordatoriosPorTipo': {
             'medicacion': medicationCount,
-            'tareas': taskCount,
-            'citas': appointmentCount,
+            'actividad': activityCount,
           },
           'reminders': patientReminders,
         });
@@ -262,18 +260,18 @@ class AnalyticsService with CacheableMixin {
     final medication = reminders.where((r) => 
       r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
     ).length;
-    final tasks = reminders.where((r) => 
-      r.type.toLowerCase().contains('tarea') || r.type == 'Tarea'
-    ).length;
-    final appointments = reminders.where((r) => 
+    
+    final activity = reminders.where((r) => 
+      r.type.toLowerCase().contains('activ') || r.type == 'Actividad' ||
+      r.type.toLowerCase().contains('tarea') || r.type == 'Tarea' ||
       r.type.toLowerCase().contains('cita') || r.type == 'Cita'
     ).length;
-    final others = reminders.length - medication - tasks - appointments;
+    
+    final others = reminders.length - medication - activity;
     
     return {
       'medicacion': medication,
-      'tareas': tasks,
-      'citas': appointments,
+      'actividad': activity,
       'otros': others,
     };
   }

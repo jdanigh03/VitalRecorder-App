@@ -142,15 +142,64 @@ class CuidadorService {
   Future<List<UserModel>> getPacientes() async {
     try {
       final currentUserId = currentUser?.uid;
-      if (currentUserId == null) return [];
+      final currentEmail = currentUser?.email;
+      if (currentUserId == null || currentEmail == null) {
+        print('Error: Cuidador no autenticado o sin email');
+        return [];
+      }
+      
+      print('Buscando pacientes para el cuidador: $currentEmail usando collectionGroup');
+      
       List<UserModel> pacientesAsignados = [];
-      final allUsersSnapshot = await _firestore.collection('users').where('role', isEqualTo: 'user').get();
-      for (final userDoc in allUsersSnapshot.docs) {
-        final cuidadoresSnapshot = await _firestore.collection('users').doc(userDoc.id).collection('cuidadores').where('email', isEqualTo: currentUser?.email).where('activo', isEqualTo: true).get();
-        if (cuidadoresSnapshot.docs.isNotEmpty) {
-          pacientesAsignados.add(UserModel.fromFirestore(userDoc));
+      
+      try {
+        // INTENTO 1: Usar collectionGroup (Rápido, requiere índice)
+        print('Intentando búsqueda optimizada con collectionGroup...');
+        final cuidadoresSnapshot = await _firestore
+            .collectionGroup('cuidadores')
+            .where('email', isEqualTo: currentEmail)
+            .where('activo', isEqualTo: true)
+            .get();
+            
+        print('Encontradas ${cuidadoresSnapshot.docs.length} asignaciones de cuidador (Optimizado)');
+        
+        for (final doc in cuidadoresSnapshot.docs) {
+          final userDocRef = doc.reference.parent.parent;
+          if (userDocRef != null) {
+            final userDoc = await userDocRef.get();
+            if (userDoc.exists) {
+              final data = userDoc.data() as Map<String, dynamic>?;
+              print('Paciente encontrado: ${userDoc.id} (${data?['email'] ?? 'sin email'})');
+              pacientesAsignados.add(UserModel.fromFirestore(userDoc));
+            }
+          }
+        }
+      } catch (e) {
+        // INTENTO 2: Fallback a búsqueda iterativa (Lento, no requiere índice)
+        print('Advertencia: Falló la búsqueda optimizada (probablemente falta índice). Usando método alternativo.');
+        print('Error original: $e');
+        
+        print('Iniciando búsqueda iterativa (puede tardar un poco)...');
+        final allUsersSnapshot = await _firestore.collection('users').get();
+        
+        for (final userDoc in allUsersSnapshot.docs) {
+          final cuidadoresSnapshot = await _firestore
+              .collection('users')
+              .doc(userDoc.id)
+              .collection('cuidadores')
+              .where('email', isEqualTo: currentEmail)
+              .where('activo', isEqualTo: true)
+              .get();
+              
+          if (cuidadoresSnapshot.docs.isNotEmpty) {
+            final data = userDoc.data();
+            print('Paciente encontrado (Iterativo): ${userDoc.id} (${data['email'] ?? 'sin email'})');
+            pacientesAsignados.add(UserModel.fromFirestore(userDoc));
+          }
         }
       }
+      
+      print('Total pacientes asignados encontrados: ${pacientesAsignados.length}');
       return pacientesAsignados;
     } catch (e) {
       print('Error obteniendo pacientes asignados: $e');
