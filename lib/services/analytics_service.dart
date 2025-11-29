@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/reminder_new.dart';
 import '../models/user.dart';
+import '../models/reminder_confirmation.dart';
 import '../reminder_service_new.dart';
 import 'cuidador_service.dart';
 import 'reports_cache.dart';
@@ -14,14 +15,13 @@ class AnalyticsService with CacheableMixin {
 
   User? get currentUser => _auth.currentUser;
 
-  // Método obsoleto - las estadísticas ahora usan confirmaciones individuales
-
-  /// Calcula estadísticas reales para el período especificado
+  /// Calcula estadísticas reales para el período especificado usando confirmaciones
   Future<Map<String, dynamic>> calculateRealStats({
     required DateTime startDate,
     required DateTime endDate,
     List<ReminderNew>? allReminders,
     List<UserModel>? allPatients,
+    String? patientId,
   }) async {
     final cacheKey = cache.generateAnalyticsKey(
       operation: 'calculateRealStats',
@@ -30,12 +30,61 @@ class AnalyticsService with CacheableMixin {
     );
 
     return await withCache(cacheKey, () async {
-      final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
-      final patients = allPatients ?? await _cuidadorService.getPacientes();
+      var reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
+      var patients = allPatients ?? await _cuidadorService.getPacientes();
 
-      // Usar el servicio de cuidador que ya calcula estadísticas con el nuevo sistema
-      final stats = await _cuidadorService.getCuidadorStats();
+      if (patientId != null) {
+        reminders = reminders.where((r) => r.userId == patientId).toList();
+        patients = patients.where((p) => p.userId == patientId).toList();
+      }
+
+      // Obtener todas las confirmaciones del rango
+      final confirmations = await _reminderService.getConfirmationsForRange(
+        startDate: startDate,
+        endDate: endDate,
+        patientId: patientId,
+      );
+
+      // Filtrar confirmaciones pausadas
+      final activeConfirmations = confirmations.where((c) => c.status != ConfirmationStatus.PAUSED).toList();
       
+      final confirmedCount = activeConfirmations.where((c) => c.status == ConfirmationStatus.CONFIRMED).length;
+      
+      // Considerar vencidos los que tienen estado MISSED o los PENDING que ya pasaron
+      final now = DateTime.now();
+      final missedCount = activeConfirmations.where((c) => 
+        c.status == ConfirmationStatus.MISSED || 
+        (c.status == ConfirmationStatus.PENDING && c.scheduledTime.isBefore(now))
+      ).length;
+      
+      // Pendientes son solo los futuros
+      final pendingCount = activeConfirmations.where((c) => 
+        c.status == ConfirmationStatus.PENDING && c.scheduledTime.isAfter(now)
+      ).length;
+      
+      // Calcular adherencia: Confirmados / (Confirmados + Omitidos)
+      final totalForAdherence = confirmedCount + missedCount;
+      final adherenceRate = totalForAdherence > 0 
+          ? (confirmedCount / totalForAdherence * 100).round() 
+          : 0;
+
+      // Completados HOY
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      final endOfToday = startOfToday.add(Duration(days: 1));
+      
+      final completedToday = confirmations.where((c) => 
+        c.status == ConfirmationStatus.CONFIRMED &&
+        c.scheduledTime.isAfter(startOfToday) &&
+        c.scheduledTime.isBefore(endOfToday)
+      ).length;
+
+      // Alertas HOY
+      final alertsToday = confirmations.where((c) => 
+        (c.status == ConfirmationStatus.MISSED || c.status == ConfirmationStatus.PENDING) &&
+        c.scheduledTime.isAfter(startOfToday) &&
+        c.scheduledTime.isBefore(endOfToday)
+      ).length;
+
       // Distribución por tipos
       final medicationCount = reminders.where((r) => 
         r.type.toLowerCase().contains('medic') || r.type == 'Medicación'
@@ -49,14 +98,15 @@ class AnalyticsService with CacheableMixin {
 
       return {
         'totalPacientes': patients.length,
-        'totalRecordatorios': stats['totalRecordatorios'] ?? 0,
-        'recordatoriosActivos': stats['recordatoriosActivos'] ?? 0,
-        'completadosHoy': stats['completadosHoy'] ?? 0,
-        'alertasHoy': stats['alertasHoy'] ?? 0,
-        'adherenciaGeneral': stats['adherenciaGeneral'] ?? 0,
-        'recordatoriosHoy': stats['recordatoriosHoy'] ?? 0,
-        'vencidos': 0,
-        'completados': stats['completadosHoy'] ?? 0,
+        'totalRecordatorios': reminders.length,
+        'recordatoriosActivos': reminders.where((r) => !r.isPaused).length,
+        'completadosHoy': completedToday,
+        'alertasHoy': alertsToday,
+        'adherenciaGeneral': adherenceRate,
+        'recordatoriosHoy': 0,
+        'vencidos': missedCount,
+        'completados': confirmedCount,
+        'pendientes': pendingCount,
         'recordatoriosPorTipo': {
           'medicacion': medicationCount,
           'tareas': taskCount,
@@ -66,12 +116,12 @@ class AnalyticsService with CacheableMixin {
     });
   }
 
-  /// Genera datos para gráfico de tendencias de adherencia
-  /// TODO: Actualizar para usar confirmaciones del nuevo sistema
+  /// Genera datos para gráfico de tendencias de adherencia usando confirmaciones
   Future<List<Map<String, dynamic>>> getTrendData({
     required DateTime startDate,
     required DateTime endDate,
     List<ReminderNew>? allReminders,
+    String? patientId,
   }) async {
     final cacheKey = cache.generateAnalyticsKey(
       operation: 'getTrendData',
@@ -80,31 +130,46 @@ class AnalyticsService with CacheableMixin {
     );
 
     return await withCache(cacheKey, () async {
-      final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
+      final confirmations = await _reminderService.getConfirmationsForRange(
+        startDate: startDate,
+        endDate: endDate,
+        patientId: patientId,
+      );
+
       final trendData = <Map<String, dynamic>>[];
       
-      // Generar datos por día - TEMPORAL: sin verificar completados
+      // Iterar por día
       for (var date = startDate; date.isBefore(endDate) || date.isAtSameMomentAs(endDate); 
            date = date.add(Duration(days: 1))) {
         
         final dayStart = DateTime(date.year, date.month, date.day);
         final dayEnd = dayStart.add(Duration(days: 1));
         
-        final dayReminders = reminders.where((r) => 
-          r.startDate.isBefore(dayEnd) && r.endDate.isAfter(dayStart)
+        // Filtrar confirmaciones del día
+        final dayConfirmations = confirmations.where((c) => 
+          c.scheduledTime.isAfter(dayStart.subtract(Duration(milliseconds: 1))) && 
+          c.scheduledTime.isBefore(dayEnd) &&
+          c.status != ConfirmationStatus.PAUSED
         ).toList();
         
-        // TODO: Obtener confirmaciones para calcular completados
-        final completed = 0;
-        final total = dayReminders.length;
-        final adherence = 0;
+        final confirmed = dayConfirmations.where((c) => c.status == ConfirmationStatus.CONFIRMED).length;
+        
+        // Considerar vencidos los que tienen estado MISSED o los PENDING que ya pasaron (si el día ya pasó)
+        final missed = dayConfirmations.where((c) => 
+          c.status == ConfirmationStatus.MISSED || 
+          (c.status == ConfirmationStatus.PENDING && c.scheduledTime.isBefore(DateTime.now()))
+        ).length;
+        
+        final total = confirmed + missed;
+        
+        final adherence = total > 0 ? (confirmed / total * 100).round() : 0;
         
         trendData.add({
           'date': date,
           'adherence': adherence,
-          'completed': completed,
-          'total': total,
-          'overdue': 0,
+          'completed': confirmed,
+          'total': dayConfirmations.length,
+          'overdue': missed,
         });
       }
       
@@ -112,8 +177,7 @@ class AnalyticsService with CacheableMixin {
     });
   }
 
-  /// Calcula estadísticas por paciente
-  /// TODO: Actualizar para usar confirmaciones del nuevo sistema
+  /// Calcula estadísticas por paciente usando confirmaciones
   Future<List<Map<String, dynamic>>> getPatientStats({
     required DateTime startDate,
     required DateTime endDate,
@@ -121,24 +185,39 @@ class AnalyticsService with CacheableMixin {
     List<UserModel>? allPatients,
   }) async {
     try {
-      final now = DateTime.now();
       final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
       final patients = allPatients ?? await _cuidadorService.getPacientes();
       
+      // Obtener todas las confirmaciones del rango
+      final allConfirmations = await _reminderService.getConfirmationsForRange(
+        startDate: startDate,
+        endDate: endDate,
+      );
+
       final patientStats = <Map<String, dynamic>>[];
       
       for (final patient in patients) {
-        // Usar servicio de cuidador para obtener stats reales
-        final stats = await _cuidadorService.getEstadisticasPaciente(patient.userId!);
-        final patientReminders = reminders.where((r) => 
-          r.userId == patient.userId
-        ).toList();
+        final patientId = patient.userId;
         
-        final total = stats['totalRecordatorios'] as int;
-        final completed = stats['completados'] as int;
-        final overdue = 0; // TODO
-        final pending = stats['pendientes'] as int;
-        final adherence = stats['adherencia'] as int;
+        // Filtrar confirmaciones del paciente
+        final patientConfirmations = allConfirmations.where((c) => c.userId == patientId).toList();
+        final activeConfirmations = patientConfirmations.where((c) => c.status != ConfirmationStatus.PAUSED).toList();
+        
+        final confirmed = activeConfirmations.where((c) => c.status == ConfirmationStatus.CONFIRMED).length;
+        
+        final missed = activeConfirmations.where((c) => 
+          c.status == ConfirmationStatus.MISSED || 
+          (c.status == ConfirmationStatus.PENDING && c.scheduledTime.isBefore(DateTime.now()))
+        ).length;
+        
+        final pending = activeConfirmations.where((c) => 
+          c.status == ConfirmationStatus.PENDING && c.scheduledTime.isAfter(DateTime.now())
+        ).length;
+        
+        final totalFinished = confirmed + missed;
+        final adherence = totalFinished > 0 ? (confirmed / totalFinished * 100).round() : 0;
+        
+        final patientReminders = reminders.where((r) => r.userId == patientId).toList();
         
         // Distribución por tipos para este paciente
         final medicationCount = patientReminders.where((r) => 
@@ -153,9 +232,10 @@ class AnalyticsService with CacheableMixin {
         
         patientStats.add({
           'patient': patient,
-          'totalRecordatorios': total,
-          'completados': completed,
-          'vencidos': overdue,
+          'totalRecordatorios': patientReminders.length,
+          'totalEventos': patientConfirmations.length,
+          'completados': confirmed,
+          'vencidos': missed,
           'pendientes': pending,
           'adherencia': adherence,
           'recordatoriosPorTipo': {
@@ -208,40 +288,53 @@ class AnalyticsService with CacheableMixin {
       final reminders = allReminders ?? await _cuidadorService.getAllRemindersFromPatients();
       final patients = allPatients ?? await _cuidadorService.getPacientes();
       
+      // Obtener confirmaciones pendientes o vencidas recientes
+      final startOfCheck = now.subtract(Duration(days: 1)); // Revisar últimas 24h
+      final confirmations = await _reminderService.getConfirmationsForRange(
+        startDate: startOfCheck,
+        endDate: now,
+      );
+
       final alerts = <Map<String, dynamic>>[];
       
-      for (final reminder in reminders) {
-        // Excluir recordatorios pausados de las alertas
-        if (reminder.isPaused) continue;
+      for (final confirmation in confirmations) {
+        if (confirmation.status == ConfirmationStatus.CONFIRMED || 
+            confirmation.status == ConfirmationStatus.PAUSED) continue;
+            
+        if (confirmation.status == ConfirmationStatus.PENDING && 
+            confirmation.scheduledTime.isAfter(now)) continue;
+
+        final reminder = reminders.firstWhere(
+          (r) => r.id == confirmation.reminderId,
+          orElse: () => ReminderNew(
+            id: 'unknown', title: 'Desconocido', description: '', type: 'other', 
+            startDate: now, endDate: now, intervalType: IntervalType.HOURS, intervalValue: 1, dailyScheduleTimes: [], isActive: false, isPaused: false
+          ),
+        );
         
-        // TODO: Verificar vencimiento con confirmaciones
-        final nextOccurrence = reminder.getNextOccurrence();
-        final isOverdue = nextOccurrence == null || nextOccurrence.isBefore(now);
+        if (reminder.id == 'unknown') continue;
+
+        final patient = patients.firstWhere(
+          (p) => p.userId == confirmation.userId,
+          orElse: () => UserModel(
+            email: 'unknown@example.com',
+            persona: UserPersona(nombres: 'Desconocido', apellidos: ''),
+            settings: UserSettings(telefono: ''),
+            createdAt: DateTime.now(),
+          ),
+        );
         
-        if (isOverdue) {
-          final patient = patients.firstWhere(
-            (p) => p.userId == reminder.userId,
-            orElse: () => UserModel(
-              email: 'unknown@example.com',
-              persona: UserPersona(nombres: 'Desconocido', apellidos: ''),
-              settings: UserSettings(telefono: ''),
-              createdAt: DateTime.now(),
-            ),
-          );
-          
-          // Calcular cuánto tiempo lleva vencido
-          final overdueDuration = nextOccurrence != null ? now.difference(nextOccurrence) : Duration.zero;
-          
-          alerts.add({
-            'reminder': reminder,
-            'patient': patient,
-            'overdueDuration': overdueDuration,
-            'severity': _getAlertSeverity(overdueDuration),
-          });
-        }
+        final overdueDuration = now.difference(confirmation.scheduledTime);
+        
+        alerts.add({
+          'reminder': reminder,
+          'patient': patient,
+          'overdueDuration': overdueDuration,
+          'severity': _getAlertSeverity(overdueDuration),
+          'scheduledTime': confirmation.scheduledTime,
+        });
       }
       
-      // Ordenar por severidad y tiempo vencido
       alerts.sort((a, b) {
         final severityComparison = b['severity'].compareTo(a['severity']);
         if (severityComparison != 0) return severityComparison;
@@ -255,42 +348,10 @@ class AnalyticsService with CacheableMixin {
     }
   }
   
-  /// Verifica si un recordatorio está realmente vencido
-  /// TODO: Actualizar para verificar con confirmaciones
-  bool isReallyOverdue(ReminderNew reminder, DateTime now) {
-    // Obtener próxima ocurrencia
-    final nextOccurrence = reminder.getNextOccurrence();
-    if (nextOccurrence == null) {
-      // No hay más ocurrencias futuras, verificar si el rango ya terminó
-      return reminder.endDate.isBefore(now);
-    }
-    // No está vencido si tiene próxima ocurrencia futura
-    return false;
-  }
-
   int _getAlertSeverity(Duration overdueDuration) {
     if (overdueDuration.inHours >= 24) return 3; // Crítica
     if (overdueDuration.inHours >= 6) return 2;  // Alta
     if (overdueDuration.inHours >= 2) return 1;  // Media
     return 0; // Baja
-  }
-
-  Map<String, dynamic> _getEmptyStats() {
-    return {
-      'totalPacientes': 0,
-      'totalRecordatorios': 0,
-      'recordatoriosActivos': 0,
-      'completadosHoy': 0,
-      'alertasHoy': 0,
-      'adherenciaGeneral': 0,
-      'recordatoriosHoy': 0,
-      'vencidos': 0,
-      'completados': 0,
-      'recordatoriosPorTipo': {
-        'medicacion': 0,
-        'tareas': 0,
-        'citas': 0,
-      },
-    };
   }
 }

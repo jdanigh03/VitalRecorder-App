@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/invitacion_cuidador.dart';
 import '../services/invitacion_service.dart';
 import '../services/payment_limit_service.dart';
-import 'payments/paywall_beneficios_screen.dart';
+import 'subscription_screen.dart';
 
 class InvitacionesCuidadorScreen extends StatefulWidget {
   const InvitacionesCuidadorScreen({Key? key}) : super(key: key);
@@ -79,7 +79,7 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
           // Navegar al paywall para comprar cupo adicional
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const PaywallBeneficiosScreen()),
+            MaterialPageRoute(builder: (context) => const SubscriptionScreen()),
           );
           // Tras volver, recargar invitaciones y salir
           await _cargarInvitaciones();
@@ -269,7 +269,7 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
                 ),
                 SizedBox(height: 12),
                 Text(
-                  'Invitaciones de Pacientes',
+                  'Invitaciones de Usuarios',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -593,7 +593,7 @@ class _InvitacionesCuidadorScreenState extends State<InvitacionesCuidadorScreen>
                             Icon(Icons.message, size: 16, color: Colors.blue[700]),
                             SizedBox(width: 8),
                             Text(
-                              'Mensaje del paciente:',
+                              'Mensaje del usuario:',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,

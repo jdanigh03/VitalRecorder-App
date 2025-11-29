@@ -47,6 +47,8 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
   // Datos
   UserModel? _currentUserData;
   List<ReminderNew> _todayReminders = [];
+  int _pausedRemindersCount = 0;
+  int _completedCount = 0;
   int _invitacionesPendientes = 0;
   int _notificacionesNoLeidas = 0; // Para control de estado anterior
   final Set<String> _processedNotificationIds = {}; // Evitar duplicados locales
@@ -307,6 +309,9 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       // Cargar recordatorios relevantes de pacientes asignados
       await _loadRelevantRemindersFromPatients();
       
+      // Calcular completados
+      await _calculateCompletedCount();
+      
       // Cargar invitaciones pendientes
       await _loadInvitacionesPendientes();
       
@@ -337,6 +342,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       final pacientesAsignados = await _cuidadorService.getPacientes();
       
       List<ReminderNew> relevantReminders = [];
+      int pausedCount = 0;
       
       if (pacientesAsignados.isNotEmpty) {
         // Si es cuidador: obtener recordatorios de todos los pacientes
@@ -345,9 +351,14 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
         for (final paciente in pacientesAsignados) {
           final reminders = await _reminderService.getRemindersByPatient(paciente.userId!);
           
-          // Filtrar solo recordatorios con ocurrencias hoy
+          // Filtrar solo recordatorios activos y con ocurrencias hoy
           for (final reminder in reminders) {
             if (reminder.hasOccurrencesOnDay(today)) {
+              print('Recordatorio: ${reminder.title}, Paused: ${reminder.isPaused}, Active: ${reminder.isActive}');
+              if (reminder.isPaused) {
+                pausedCount++;
+              }
+              // Always add to list so it shows in UI
               relevantReminders.add(reminder);
             }
           }
@@ -357,10 +368,16 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
         print('Usuario es PACIENTE - Cargando recordatorios propios');
         final allReminders = await _reminderService.getAllReminders();
         
-        // Filtrar recordatorios con ocurrencias hoy
-        relevantReminders = allReminders.where((r) {
-          return r.hasOccurrencesOnDay(today);
-        }).toList();
+        // Filtrar recordatorios activos con ocurrencias hoy
+        for (final reminder in allReminders) {
+          if (reminder.hasOccurrencesOnDay(today)) {
+             if (reminder.isPaused) {
+                pausedCount++;
+              }
+              // Always add to list
+              relevantReminders.add(reminder);
+          }
+        }
         
         print('=== DEBUG FILTRO PACIENTE ===');
         print('Total recordatorios en BD: ${allReminders.length}');
@@ -380,6 +397,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       });
       
       _todayReminders = relevantReminders;
+      _pausedRemindersCount = pausedCount;
       
       print('=== RESULTADO FINAL ===');
       print('Total recordatorios mostrados: ${_todayReminders.length}');
@@ -387,6 +405,48 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     } catch (e) {
       print('Error cargando recordatorios: $e');
       _todayReminders = [];
+    }
+  }
+
+  Future<void> _calculateCompletedCount() async {
+    try {
+      int completed = 0;
+      final now = DateTime.now();
+      
+      for (final reminder in _todayReminders) {
+        // Skip paused reminders for completed count
+        if (reminder.isPaused) continue;
+        
+        // Obtener confirmaciones para este recordatorio
+        final confirmations = await _reminderService.getConfirmations(reminder.id);
+        
+        // Calcular ocurrencias de hoy
+        final occurrences = reminder.calculateOccurrencesForDay(now);
+        
+        for (final occurrence in occurrences) {
+          // Verificar si existe confirmación para esta ocurrencia
+          final isConfirmed = confirmations.any((c) => 
+            c.scheduledTime.year == occurrence.year &&
+            c.scheduledTime.month == occurrence.month &&
+            c.scheduledTime.day == occurrence.day &&
+            c.scheduledTime.hour == occurrence.hour &&
+            c.scheduledTime.minute == occurrence.minute &&
+            c.status == 'CONFIRMED'
+          );
+          
+          if (isConfirmed) {
+            completed++;
+          }
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _completedCount = completed;
+        });
+      }
+    } catch (e) {
+      print('Error calculando completados: $e');
     }
   }
 
@@ -491,7 +551,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
               Icon(Icons.info, color: Colors.white),
               SizedBox(width: 12),
               Expanded(
-                child: Text('Los pacientes deben completar sus propios recordatorios'),
+                child: Text('Los usuarios deben completar sus propios recordatorios'),
               ),
             ],
           ),
@@ -513,8 +573,10 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
     // Usar _todayReminders que ya viene filtrado y ordenado
     final todayReminders = _todayReminders;
 
-    // TODO: Implementar conteo basado en confirmaciones
-    final pendingCount = todayReminders.length;
+    // Calcular pendientes reales (Total Activos - Completados)
+    // Aseguramos que no sea negativo por si acaso
+    final activeRemindersCount = todayReminders.where((r) => !r.isPaused).length;
+    final pendingCount = (activeRemindersCount - _completedCount).clamp(0, activeRemindersCount);
     final completedCount = 0;
 
     return Scaffold(
@@ -692,35 +754,69 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                           ? 'No hay recordatorios pendientes'
                           : pendingCount == 0
                               ? '¡Todos los recordatorios completados!'
-                              : 'Pacientes: $pendingCount ${pendingCount == 1 ? 'pendiente' : 'pendientes'}',
+                              : 'Tus usuarios tienen $pendingCount ${pendingCount == 1 ? 'recordatorio pendiente' : 'recordatorios pendientes'}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    // Calculate paused count (we need to fetch all reminders again or filter differently)
+                    // Since _todayReminders only contains active ones, we need a separate count or logic.
+                    // For now, let's assume we want to show paused reminders that WOULD be today if active.
+                    
+                    // Note: _todayReminders is already filtered to exclude paused. 
+                    // To get paused count, we would need to modify _loadRelevantRemindersFromPatients to return everything 
+                    // and then filter here. But to avoid breaking changes, let's just add a placeholder or 
+                    // modify the load function to return a separate list of paused reminders.
+                    
+                    // BETTER APPROACH: Let's modify the UI to show "Pausados" if we can easily get them.
+                    // Since we filtered them out in _loadRelevantRemindersFromPatients, we don't have them here.
+                    // Let's modify _loadRelevantRemindersFromPatients to store paused reminders in a separate list.
+                    
                     const SizedBox(height: 16),
+                    // Fila 1: Total y Completados
                     Row(
                       children: [
-                        _buildStatCard(
-                          'Total',
-                          '${todayReminders.length}',
-                          Icons.calendar_today,
-                          Colors.white24,
+                        Expanded(
+                          child: _buildStatCard(
+                            'Total',
+                            '${todayReminders.length}',
+                            Icons.calendar_today,
+                            Colors.white24,
+                          ),
                         ),
                         SizedBox(width: 12),
-                        _buildStatCard(
-                          'Completados',
-                          '$completedCount',
-                          Icons.check_circle,
-                          Colors.green.withOpacity(0.3),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Completados',
+                            '$_completedCount',
+                            Icons.check_circle,
+                            Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 12),
+                    // Fila 2: Pendientes y Pausados
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Pendientes',
+                            '$pendingCount',
+                            Icons.pending,
+                            Colors.orange,
+                          ),
                         ),
                         SizedBox(width: 12),
-                        _buildStatCard(
-                          'Pendientes',
-                          '$pendingCount',
-                          Icons.pending,
-                          Colors.orange.withOpacity(0.3),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Pausados',
+                            '$_pausedRemindersCount',
+                            Icons.pause_circle_outline,
+                            Colors.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -778,7 +874,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 ).then((_) => _loadUserData());
                               },
                               icon: Icon(Icons.folder_shared, size: 18),
-                              label: Text('Por Pacientes'),
+                              label: Text('Por Usuarios'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                                 backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
@@ -813,7 +909,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                                 );
                               },
                               icon: Icon(Icons.people, size: 18),
-                              label: Text('Pacientes'),
+                              label: Text('Usuarios'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                               ),
@@ -850,7 +946,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.people, color: Colors.white),
         label: const Text(
-          'Ver Pacientes',
+          'Ver Usuarios',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -887,7 +983,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Pacientes',
+              label: 'Usuarios',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.schedule_outlined),
@@ -898,48 +994,6 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
               icon: Icon(Icons.settings_outlined),
               activeIcon: Icon(Icons.settings),
               label: 'Ajustes',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -959,7 +1013,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 24),
             Text(
-              'Cargando recordatorios de pacientes...',
+              'Cargando recordatorios de usuarios...',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -993,7 +1047,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 24),
             Text(
-              'No hay recordatorios de pacientes hoy',
+              'No hay recordatorios de usuarios hoy',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -1003,7 +1057,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
             const SizedBox(height: 8),
             Text(
-              'Tus pacientes no tienen recordatorios programados para hoy',
+              'Tus usuarios no tienen recordatorios programados para hoy',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -1021,7 +1075,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                 );
               },
               icon: Icon(Icons.people),
-              label: Text('Ver Mis Pacientes'),
+              label: Text('Ver Mis Usuarios'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF4A90E2),
                 foregroundColor: Colors.white,
@@ -1147,7 +1201,7 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                         FutureBuilder<String>(
                           future: _getPatientName(reminder.userId ?? ''),
                           builder: (context, snapshot) {
-                            final patientName = snapshot.data ?? 'Paciente';
+                            final patientName = snapshot.data ?? 'Usuario';
                             return Container(
                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
@@ -1351,11 +1405,11 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
       final pacientes = await _cuidadorService.getPacientes();
       final paciente = pacientes.firstWhere(
         (p) => p.userId == userId,
-        orElse: () => throw Exception('Paciente no encontrado'),
+        orElse: () => throw Exception('Usuario no encontrado'),
       );
       return paciente.persona.nombres;
     } catch (e) {
-      return 'Paciente';
+      return 'Usuario';
     }
   }
 
@@ -1654,6 +1708,72 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    // Si el color es blanco (Total), usamos un azul claro para el fondo del icono
+    final iconBgColor = color == Colors.white24 ? Colors.blue.shade300 : color.withOpacity(1.0);
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconBgColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: iconBgColor.withOpacity(0.5),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.9),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

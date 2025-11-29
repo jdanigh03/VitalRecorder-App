@@ -228,12 +228,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    // Título de la aplicación
+                    const Text(
+                      'VitalRecorder',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Mensaje de bienvenida
+                    const Text(
+                      'Bienvenido',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
                     const Text(
                       'Registrarse',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
                     ),

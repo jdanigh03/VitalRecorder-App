@@ -285,9 +285,9 @@ class CuidadorService {
       final currentEmail = currentUser?.email;
       if (currentUserId == null || currentEmail == null) throw Exception('Cuidador no autenticado');
       final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
-      if (!isAssigned) throw Exception('No tienes permisos para crear recordatorios para este paciente');
+      if (!isAssigned) throw Exception('No tienes permisos para crear recordatorios para este usuario');
       final pacienteDoc = await _firestore.collection('users').doc(pacienteId).get();
-      if (!pacienteDoc.exists) throw Exception('Paciente no encontrado');
+      if (!pacienteDoc.exists) throw Exception('Usuario no encontrado');
       final pacienteData = pacienteDoc.data() as Map<String, dynamic>;
       final pacienteEmail = pacienteData['email'] ?? '';
       // Crear recordatorio con nuevo sistema
@@ -299,8 +299,8 @@ class CuidadorService {
       final success = await _reminderService.createReminderWithConfirmations(reminderWithId);
       
       if (success) {
-        print('Recordatorio creado por cuidador para paciente $pacienteId');
-        print('El recordatorio se sincronizará automáticamente cuando el paciente abra su app');
+        print('Recordatorio creado por cuidador para usuario $pacienteId');
+        print('El recordatorio se sincronizará automáticamente cuando el usuario abra su app');
       }
       
       return success;
@@ -339,7 +339,7 @@ class CuidadorService {
       final currentEmail = currentUser?.email;
       if (currentEmail == null) throw Exception('Cuidador no autenticado');
       final isAssigned = await _isCuidadorAsignadoAPaciente(pacienteId, currentEmail);
-      if (!isAssigned) throw Exception('No tienes permisos para modificar recordatorios de este paciente');
+      if (!isAssigned) throw Exception('No tienes permisos para modificar recordatorios de este usuario');
       
       await _reminderService.deactivateReminder(recordatorioId);
       return true;
@@ -358,6 +358,7 @@ class CuidadorService {
       double totalAdherence = 0;
       
       for (final reminder in recordatorios) {
+        if (reminder.isPaused) continue;
         final stats = await _reminderService.getReminderStats(reminder.id);
         totalConfirmations += stats['total'] as int;
         completedConfirmations += stats['confirmed'] as int;

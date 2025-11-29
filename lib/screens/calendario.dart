@@ -338,10 +338,9 @@ class _CalendarioScreenState extends State<CalendarioScreen>
             locale: 'es_ES',
             calendarStyle: const CalendarStyle(
               outsideDaysVisible: false,
-              markersMaxCount: 3,
+              markersMaxCount: 1,
               markerDecoration: BoxDecoration(
-                color: Color(0xFF1E3A5F),
-                shape: BoxShape.circle,
+                color: Colors.transparent,
               ),
               todayDecoration: BoxDecoration(
                 color: Color(0xFF4A90E2),
@@ -361,12 +360,55 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                 color: Color(0xFF1E3A5F),
               ),
             ),
+            calendarBuilders: CalendarBuilders<ReminderNew>(
+              markerBuilder: (context, day, events) {
+                if (events.isEmpty) return null;
+                return Positioned(
+                  bottom: 2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E3A5F),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${events.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
               });
             },
+          ),
+        ),
+        // Leyenda de indicadores
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: const Color(0xFFF5F7FA),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 8),
+              Text(
+                'Los números indican actividades programadas por día',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -392,10 +434,9 @@ class _CalendarioScreenState extends State<CalendarioScreen>
             locale: 'es_ES',
             calendarStyle: const CalendarStyle(
               outsideDaysVisible: false,
-              markersMaxCount: 3,
+              markersMaxCount: 1,
               markerDecoration: BoxDecoration(
-                color: Color(0xFF1E3A5F),
-                shape: BoxShape.circle,
+                color: Colors.transparent,
               ),
               todayDecoration: BoxDecoration(
                 color: Color(0xFF4A90E2),
@@ -420,6 +461,29 @@ class _CalendarioScreenState extends State<CalendarioScreen>
               CalendarFormat.twoWeeks: '2 semanas',
               CalendarFormat.week: 'Semana',
             },
+            calendarBuilders: CalendarBuilders<ReminderNew>(
+              markerBuilder: (context, day, events) {
+                if (events.isEmpty) return null;
+                return Positioned(
+                  bottom: 2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E3A5F),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${events.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
                 _selectedDay = selectedDay;
@@ -431,6 +495,26 @@ class _CalendarioScreenState extends State<CalendarioScreen>
                 _calendarFormat = format;
               });
             },
+          ),
+        ),
+        // Leyenda de indicadores
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: const Color(0xFFF5F7FA),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 8),
+              Text(
+                'Los números indican actividades programadas por día',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(

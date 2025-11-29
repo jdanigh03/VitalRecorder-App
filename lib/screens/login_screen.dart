@@ -143,12 +143,37 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
 
+                    // Título de la aplicación
+                    const Text(
+                      'VitalRecorder',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 32.0,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Mensaje de bienvenida
+                    const Text(
+                      'Bienvenido',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24.0,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
                     const Text(
                       'Iniciar Sesión',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 36.0,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 28.0,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
                     ),

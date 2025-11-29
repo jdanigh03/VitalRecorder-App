@@ -215,7 +215,7 @@ class _CuidadorCrearRecordatorioNewScreenState
       Navigator.pop(context);
 
       // Mostrar éxito
-      final pacienteName = widget.paciente?.persona.nombres ?? 'el paciente';
+      final pacienteName = widget.paciente?.persona.nombres ?? 'el usuario';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -252,7 +252,7 @@ class _CuidadorCrearRecordatorioNewScreenState
 
   @override
   Widget build(BuildContext context) {
-    final pacienteName = widget.paciente?.persona.nombres ?? 'Paciente';
+    final pacienteName = widget.paciente?.persona.nombres ?? 'Usuario';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
