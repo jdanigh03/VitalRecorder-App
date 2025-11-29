@@ -102,6 +102,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         discount: discount > 0 ? discount : null,
         lines: lines,
         description: 'Suscripción: ${plan.name}',
+        planId: plan.id, // Send plan ID to server for webhook processing
       );
 
       if (url == null) {
