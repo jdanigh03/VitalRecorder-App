@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/subscription_plan.dart';
 import '../services/subscription_service.dart';
 import '../services/payment_service.dart';
@@ -112,38 +113,33 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       // 2. Open Gateway
       await _paymentService.abrirPasarela(url);
 
-      // 3. Simulate success for now (In real app, we'd wait for webhook/callback)
-      // For this implementation, we'll assume if they return from the webview, we check status or just activate
-      // Since we don't have the full webhook loop here, we will optimistically activate
-      // OR show a dialog asking "Did you complete the payment?"
-      
+      // 3. Payment completed - webhook will activate subscription automatically
+      // Just show a message and reload subscription status after a delay
       if (mounted) {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Confirmar Pago'),
-            content: const Text('¿Realizaste el pago exitosamente en la pasarela?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('No'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Sí, activar plan'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Pago completado. Tu suscripción se activará en breve.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
           ),
         );
-
-        if (confirmed == true) {
-          await _subscriptionService.activateSubscription(plan.id);
-          await _loadSubscription();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('¡Plan activado exitosamente!')),
-            );
-          }
+        
+        // Wait a few seconds for webhook to process, then reload
+        await Future.delayed(const Duration(seconds: 3));
+        await _loadSubscription();
+        
+        // Show success message if subscription is now active
+        final hasActiveSubscription = _currentSubscription != null && 
+          _currentSubscription!.endDate != null &&
+          _currentSubscription!.endDate!.isAfter(DateTime.now());
+        
+        if (mounted && hasActiveSubscription) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 ¡Plan activado exitosamente!'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       }
 

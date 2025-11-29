@@ -8,7 +8,7 @@ class SubscriptionService {
 
   // Define available plans
   // Base price for 1 additional slot
-  static const double basePrice = 0.01;
+  static const double basePrice = 30.0;
 
   // Define available plans
   static List<SubscriptionPlan> get plans => [
