@@ -198,7 +198,7 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
                   ),
                   SizedBox(height: 12),
                   Text(
-                    'Conecte su manilla ESP32-C3 "Vital Recorder" para recibir notificaciones LED de sus recordatorios.',
+                    'Conecte su manilla "Vital Recorder" para recibir notificaciones de sus recordatorios.',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.9),
                       fontSize: 14,
@@ -268,7 +268,7 @@ class _BraceletSetupScreenState extends State<BraceletSetupScreen> {
                   if (devices.isEmpty && !_braceletService.isScanning) {
                     return _buildInfoCard(
                       'No se encontraron manillas',
-                      'Asegúrese de que su manilla ESP32-C3 esté encendida y cerca del dispositivo.',
+                      'Asegúrese de que su manilla "Vital Recorder" esté encendida y cerca del dispositivo.',
                       Icons.info_outline,
                     );
                   }

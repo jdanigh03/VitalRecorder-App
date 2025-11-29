@@ -34,12 +34,13 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
 
   DateTime _startDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _endDate = DateTime.now();
+  bool _reportGenerated = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadReportData();
+    // _loadReportData(); // Don't load automatically
   }
 
   @override
@@ -87,11 +88,14 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
         
         // Filtro por tipo
         if (_selectedType != null) {
-          final matchesType = r.type.toLowerCase().contains(_selectedType!.toLowerCase()) ||
-                             (_selectedType == 'Medicación' && r.type.toLowerCase().contains('medic')) ||
-                             (_selectedType == 'Tarea' && r.type.toLowerCase().contains('tarea')) ||
-                             (_selectedType == 'Cita' && r.type.toLowerCase().contains('cita'));
-          if (!matchesType) return false;
+          if (_selectedType == 'Medicación') {
+             if (!r.type.toLowerCase().contains('medic') && r.type != 'Medicación') return false;
+          } else if (_selectedType == 'Actividad') {
+             final isActivity = r.type.toLowerCase().contains('activ') || r.type == 'Actividad' ||
+                                r.type.toLowerCase().contains('tarea') || r.type == 'Tarea' ||
+                                r.type.toLowerCase().contains('cita') || r.type == 'Cita';
+             if (!isActivity) return false;
+          }
         }
         
         return true;
@@ -101,10 +105,11 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
 
       setState(() {
         _stats = stats;
-        _reminders = reminders;
+        _reminders = filteredReminders;
         _trendData = trendData;
         _typeDistribution = typeDistribution;
         _isLoading = false;
+        _reportGenerated = true;
       });
     } catch (e) {
       print('Error cargando datos de reportes: $e');
@@ -128,29 +133,34 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
         backgroundColor: const Color(0xFF1E3A5F),
         foregroundColor: Colors.white,
         title: Text(
-          'Mis Reportes',
+          'Reporte de Actividades',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
-            Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
-            Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
-          ],
-        ),
+        bottom: _reportGenerated 
+          ? TabBar(
+              controller: _tabController,
+              indicatorColor: Colors.white,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              tabs: [
+                Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
+                Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
+                Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
+              ],
+            )
+          : null,
         actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: _loadReportData,
-            tooltip: 'Actualizar datos',
-          ),
+          if (_reportGenerated)
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: _loadReportData,
+              tooltip: 'Actualizar datos',
+            ),
         ],
       ),
-      body: _isLoading ? _buildLoadingView() : _buildTabContent(),
+      body: _isLoading 
+          ? _buildLoadingView() 
+          : (_reportGenerated ? _buildTabContent() : _buildFiltersView()),
     );
   }
 
@@ -181,23 +191,144 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
     );
   }
 
+
+
+  Widget _buildFiltersView() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.analytics, color: Color(0xFF4A90E2), size: 28),
+                    SizedBox(width: 12),
+                    Text(
+                      'Generar Reporte',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E3A5F),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Selecciona el período y el tipo de actividad para ver tu resumen.',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                SizedBox(height: 24),
+                _buildPeriodSelector(),
+                SizedBox(height: 20),
+                _buildFilters(),
+                SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _loadReportData,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF4A90E2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    child: Text(
+                      'Generar Reporte',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _buildActiveFiltersSummary() {
+    if (_selectedType == null) return SizedBox.shrink();
+    
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Color(0xFF4A90E2).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Color(0xFF4A90E2).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.filter_list, size: 16, color: Color(0xFF4A90E2)),
+          SizedBox(width: 8),
+          Text(
+            'Filtro: $_selectedType',
+            style: TextStyle(
+              color: Color(0xFF4A90E2),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(width: 4),
+          InkWell(
+            onTap: () {
+              setState(() {
+                _selectedType = null;
+                _loadReportData();
+              });
+            },
+            child: Icon(Icons.close, size: 16, color: Color(0xFF4A90E2)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResumenTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Selector de período
-          _buildPeriodSelector(),
+          // Selector de período (Solo mostrar resumen)
+          // _buildPeriodSelector(), // Ya no mostrar el selector completo aquí
+          Text(
+            'Período: ${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+            style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
+          ),
           SizedBox(height: 16),
           
-          // Filtros
-          _buildFilters(),
+          // Filtros (Solo mostrar resumen del filtro aplicado)
+          _buildActiveFiltersSummary(),
           SizedBox(height: 20),
           
           // Métricas principales
           Text(
-            'Mis Métricas',
+            'Resumen de Actividad',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
@@ -321,13 +452,26 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
   }
 
   Widget _buildPeriodButton(String label, int days) {
+    // Calcular si este botón está seleccionado
+    final isSelected = _endDate.difference(_startDate).inDays == days && 
+                       _endDate.day == DateTime.now().day &&
+                       _endDate.month == DateTime.now().month &&
+                       _endDate.year == DateTime.now().year;
+
     return Expanded(
       child: OutlinedButton(
         onPressed: () => _setPeriod(days),
         style: OutlinedButton.styleFrom(
-          foregroundColor: Color(0xFF4A90E2),
+          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+          backgroundColor: isSelected ? Color(0xFF4A90E2) : null,
+          foregroundColor: isSelected ? Colors.white : Color(0xFF4A90E2),
+          side: BorderSide(color: Color(0xFF4A90E2)),
+          minimumSize: Size(0, 40), // Ensure decent height but flexible width
         ),
-        child: Text(label),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label, maxLines: 1),
+        ),
       ),
     );
   }
@@ -364,19 +508,14 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
                   child: Text('Medicación'),
                 ),
                 DropdownMenuItem<String?>(
-                  value: 'Tarea',
-                  child: Text('Tareas'),
-                ),
-                DropdownMenuItem<String?>(
-                  value: 'Cita',
-                  child: Text('Citas'),
+                  value: 'Actividad',
+                  child: Text('Actividad'),
                 ),
               ],
               onChanged: (value) {
                 setState(() {
                   _selectedType = value;
                 });
-                _loadReportData();
               },
             ),
             if (_selectedType != null) ...[
@@ -386,7 +525,6 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
                   setState(() {
                     _selectedType = null;
                   });
-                  _loadReportData();
                 },
                 icon: Icon(Icons.clear, size: 16),
                 label: Text('Limpiar Filtro'),
@@ -791,7 +929,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
             'Incluye todas mis métricas, gráficos y análisis',
             Icons.picture_as_pdf,
             Colors.red,
-            () => _exportCompletePDF(),
+            () { _exportCompletePDF(); },
           ),
           
           _buildExportOption(
@@ -799,7 +937,7 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
             'Tabla con todos mis recordatorios',
             Icons.table_chart,
             Colors.green,
-            () => _exportToExcel(),
+            () { _exportToExcel(); },
           ),
           
           _buildExportOption(
@@ -883,7 +1021,6 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
       ),
     );
   }
-
   // Métodos de acción
   void _selectStartDate() async {
     final date = await showDatePicker(
@@ -900,7 +1037,6 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
           _endDate = _startDate;
         }
       });
-      _loadReportData();
     }
   }
 
@@ -916,7 +1052,6 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
       setState(() {
         _endDate = date;
       });
-      _loadReportData();
     }
   }
 
@@ -925,7 +1060,6 @@ class _PacienteReportesScreenState extends State<PacienteReportesScreen> with Ti
       _endDate = DateTime.now();
       _startDate = _endDate.subtract(Duration(days: days));
     });
-    _loadReportData();
   }
 
   Future<void> _exportCompletePDF() async {

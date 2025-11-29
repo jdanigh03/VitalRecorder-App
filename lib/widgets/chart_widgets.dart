@@ -11,7 +11,7 @@ class TrendChart extends StatelessWidget {
     Key? key,
     required this.trendData,
     this.primaryColor = const Color(0xFF4A90E2),
-    this.title = 'Evolución de Adherencia',
+    this.title = 'Evolución de Cumplimiento',
   }) : super(key: key);
 
   @override
@@ -163,7 +163,7 @@ class TrendChart extends StatelessWidget {
                           final total = trendData[barSpot.x.toInt()]['total'];
                           
                           return LineTooltipItem(
-                            '${DateFormat('dd/MM').format(date)}\nAdherencia: $adherence%\nCompletados: $completed/$total',
+                            '${DateFormat('dd/MM').format(date)}\nCumplimiento: $adherence%\nCompletados: $completed/$total',
                             TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -377,10 +377,8 @@ class TypeDistributionChart extends StatelessWidget {
     switch (key.toLowerCase()) {
       case 'medicacion':
         return 'Medicación';
-      case 'tareas':
-        return 'Tareas';
-      case 'citas':
-        return 'Citas';
+      case 'actividad':
+        return 'Actividad';
       case 'otros':
         return 'Otros';
       default:
@@ -425,7 +423,7 @@ class AdherenceBarChart extends StatelessWidget {
   const AdherenceBarChart({
     Key? key,
     required this.patientStats,
-    this.title = 'Adherencia por Paciente',
+    this.title = 'Cumplimiento por Paciente',
   }) : super(key: key);
 
   @override
@@ -471,7 +469,7 @@ class AdherenceBarChart extends StatelessWidget {
                         final total = displayStats[groupIndex]['totalRecordatorios'];
                         
                         return BarTooltipItem(
-                          '${patient.nombreCompleto}\nAdherencia: $adherence%\nCompletados: $completed/$total',
+                          '${patient.nombreCompleto}\nCumplimiento: $adherence%\nCompletados: $completed/$total',
                           TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,

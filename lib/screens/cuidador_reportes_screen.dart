@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
 import '../widgets/chart_widgets.dart';
 import '../utils/export_utils.dart';
+import '../reminder_service_new.dart';
 import 'cuidador_recordatorios_paciente_detalle.dart';
 
 class CuidadorReportesScreen extends StatefulWidget {
@@ -37,12 +38,44 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
 
   DateTime _startDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _endDate = DateTime.now();
+  bool _reportGenerated = false;
+  bool _hasInitializedController = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _loadReportData();
+    _updateTabController();
+    _loadPatients();
+  }
+
+  void _updateTabController() {
+    final newLength = _selectedPatientId == null ? 4 : 3;
+    // Check if controller needs to be created or updated
+    if (!_hasInitializedController) {
+      _tabController = TabController(length: newLength, vsync: this);
+      _hasInitializedController = true;
+    } else if (_tabController.length != newLength) {
+      final oldIndex = _tabController.index;
+      _tabController.dispose();
+      _tabController = TabController(length: newLength, vsync: this);
+      // Try to preserve the selected tab, but cap at new length
+      if (oldIndex < newLength) {
+        _tabController.index = oldIndex;
+      }
+    }
+  }
+
+  Future<void> _loadPatients() async {
+    try {
+      final pacientes = await _cuidadorService.getPacientes();
+      if (mounted) {
+        setState(() {
+          _pacientes = pacientes;
+        });
+      }
+    } catch (e) {
+      print('Error cargando pacientes: $e');
+    }
   }
 
   @override
@@ -55,20 +88,16 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
     setState(() => _isLoading = true);
     try {
       // Intentar usar cache primero
-      var pacientes = _cache.getCachedPatients();
       var reminders = _cache.getCachedReminders();
       
       // Si no hay cache, cargar desde servidor
-      if (pacientes == null || reminders == null) {
-        final results = await Future.wait([
-          _cuidadorService.getPacientes(),
-          _cuidadorService.getAllRemindersFromPatients(),
-        ]);
-        pacientes = results[0] as List<UserModel>;
-        reminders = results[1] as List<ReminderNew>;
+      if (reminders == null) {
+        reminders = await _cuidadorService.getAllRemindersFromPatients();
         
         // Actualizar cache
-        _cache.updateCache(pacientes, reminders);
+        if (_pacientes.isNotEmpty) {
+          _cache.updateCache(_pacientes, reminders);
+        }
       } else {
         print('Usando datos del cache para reportes');
       }
@@ -79,7 +108,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           startDate: _startDate,
           endDate: _endDate,
           allReminders: reminders,
-          allPatients: pacientes,
+          allPatients: _pacientes,
           patientId: _selectedPatientId,
         ),
         _analyticsService.getTrendData(
@@ -92,7 +121,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           startDate: _startDate,
           endDate: _endDate,
           allReminders: reminders,
-          allPatients: pacientes,
+          allPatients: _pacientes,
         ),
       ]);
 
@@ -102,6 +131,11 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       
       // Filtrar recordatorios por período y filtros avanzados
       final filteredReminders = reminders.where((r) {
+        // Excluir recordatorios inactivos/archivados
+        if (!r.isActive) {
+          return false;
+        }
+        
         // Filtro por período (usar startDate del recordatorio)
         if (!r.startDate.isAfter(_startDate.subtract(Duration(seconds: 1))) ||
             !r.startDate.isBefore(_endDate.add(Duration(days: 1)))) {
@@ -131,12 +165,14 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
 
       setState(() {
         _stats = stats;
-        _pacientes = pacientes ?? [];
         _reminders = reminders ?? [];
         _trendData = trendData;
         _patientStats = patientStats;
         _typeDistribution = typeDistribution;
+        _patientStats = patientStats;
+        _typeDistribution = typeDistribution;
         _isLoading = false;
+        _reportGenerated = true;
       });
     } catch (e) {
       print('Error cargando datos de reportes: $e');
@@ -160,38 +196,33 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         backgroundColor: const Color(0xFF1E3A5F),
         foregroundColor: Colors.white,
         title: Text(
-          'Reportes y Análisis',
+          'Reporte General',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
-            Tab(text: 'Adherencia', icon: Icon(Icons.trending_up, size: 16)),
-            Tab(text: 'Por Usuario', icon: Icon(Icons.person, size: 16)),
-            Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
-          ],
-        ),
+        bottom: _reportGenerated
+          ? TabBar(
+              controller: _tabController,
+              indicatorColor: Colors.white,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              tabs: _buildTabs(),
+            )
+          : null,
         actions: [
-          IconButton(
-            icon: Icon(Icons.cached),
-            onPressed: () {
-              _cache.clearCache();
-              _loadReportData();
-            },
-            tooltip: 'Limpiar cache y actualizar',
-          ),
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: _loadReportData,
-            tooltip: 'Actualizar datos',
-          ),
+          if (_reportGenerated)
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: () {
+                _cache.clearCache();
+                _loadReportData();
+              },
+              tooltip: 'Actualizar datos',
+            ),
         ],
       ),
-      body: _isLoading ? _buildLoadingView() : _buildTabContent(),
+      body: _isLoading 
+          ? _buildLoadingView() 
+          : (_reportGenerated ? _buildTabContent() : _buildFiltersView()),
     );
   }
 
@@ -212,6 +243,19 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildTabContent() {
+    // If single patient selected, exclude "Por Usuario" tab
+    if (_selectedPatientId != null) {
+      return TabBarView(
+        controller: _tabController,
+        children: [
+          _buildResumenTab(),
+          _buildAdherenciaTab(),
+          _buildExportarTab(),
+        ],
+      );
+    }
+    
+    // All patients - show all tabs
     return TabBarView(
       controller: _tabController,
       children: [
@@ -223,23 +267,162 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
     );
   }
 
+  List<Widget> _buildTabs() {
+    // If single patient selected, exclude "Por Usuario" tab
+    if (_selectedPatientId != null) {
+      return [
+        Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
+        Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
+        Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
+      ];
+    }
+    
+    // All patients - show all tabs
+    return [
+      Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
+      Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
+      Tab(text: 'Por Usuario', icon: Icon(Icons.person, size: 16)),
+      Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
+    ];
+  }
+
+
+
+  Widget _buildFiltersView() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.analytics, color: Color(0xFF4A90E2), size: 28),
+                    SizedBox(width: 12),
+                    Text(
+                      'Generar Reporte General',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E3A5F),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Selecciona el período y filtros para generar el reporte de tus pacientes.',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                SizedBox(height: 24),
+                _buildPeriodSelector(),
+                SizedBox(height: 20),
+                _buildAdvancedFilters(),
+                SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _loadReportData,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF4A90E2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    child: Text(
+                      'Generar Reporte',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _buildActiveFiltersSummary() {
+    if (_selectedType == null && _selectedPatientId == null) return SizedBox.shrink();
+    
+    return Wrap(
+      spacing: 8,
+      children: [
+        if (_selectedPatientId != null)
+          Chip(
+            label: Text('Paciente: ${_pacientes.firstWhere((p) => p.userId == _selectedPatientId, orElse: () => UserModel(id: '', email: '', persona: UserPersona(nombres: 'Desconocido', apellidos: ''), settings: UserSettings(telefono: ''), createdAt: DateTime.now())).nombreCompleto}'),
+            onDeleted: () {
+              setState(() {
+                _selectedPatientId = null;
+                _loadReportData();
+              });
+            },
+            backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
+            labelStyle: TextStyle(color: Color(0xFF4A90E2), fontWeight: FontWeight.bold),
+            deleteIconColor: Color(0xFF4A90E2),
+          ),
+        if (_selectedType != null)
+          Chip(
+            label: Text('Tipo: $_selectedType'),
+            onDeleted: () {
+              setState(() {
+                _selectedType = null;
+                _loadReportData();
+              });
+            },
+            backgroundColor: Color(0xFF4A90E2).withOpacity(0.1),
+            labelStyle: TextStyle(color: Color(0xFF4A90E2), fontWeight: FontWeight.bold),
+            deleteIconColor: Color(0xFF4A90E2),
+          ),
+      ],
+    );
+  }
+
   Widget _buildResumenTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Selector de período
-          _buildPeriodSelector(),
+          // Selector de período (Solo resumen)
+          Text(
+            'Período: ${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+            style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
+          ),
           SizedBox(height: 16),
           
-          // Filtros avanzados
-          _buildAdvancedFilters(),
+          // Filtros avanzados (Solo resumen)
+          _buildActiveFiltersSummary(),
+          SizedBox(height: 20),
           SizedBox(height: 20),
           
           // Métricas principales
           Text(
-            'Métricas Principales',
+            'Resumen General',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
@@ -354,13 +537,99 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildPeriodButton(String label, int days) {
+    // Calcular si este botón está seleccionado
+    final isSelected = _endDate.difference(_startDate).inDays == days && 
+                       _endDate.day == DateTime.now().day &&
+                       _endDate.month == DateTime.now().month &&
+                       _endDate.year == DateTime.now().year;
+
     return Expanded(
       child: OutlinedButton(
         onPressed: () => _setPeriod(days),
         style: OutlinedButton.styleFrom(
-          foregroundColor: Color(0xFF4A90E2),
+          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+          backgroundColor: isSelected ? Color(0xFF4A90E2) : null,
+          foregroundColor: isSelected ? Colors.white : Color(0xFF4A90E2),
+          side: BorderSide(color: Color(0xFF4A90E2)),
+          minimumSize: Size(0, 40), // Ensure decent height but flexible width
         ),
-        child: Text(label),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label, maxLines: 1),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdvancedFilters() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Filtros Avanzados',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 12),
+            // Filtro de paciente
+            DropdownButtonFormField<String?>(
+              value: _selectedPatientId,
+              decoration: InputDecoration(
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                labelText: 'Filtrar por Usuario',
+                prefixIcon: Icon(Icons.person, size: 20),
+              ),
+              items: [
+                DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Todos los usuarios'),
+                ),
+                ..._pacientes.map((p) => DropdownMenuItem<String?>(
+                  value: p.userId,
+                  child: Text(p.nombreCompleto.isNotEmpty ? p.nombreCompleto : p.email),
+                )),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedPatientId = value;
+                  _updateTabController();
+                });
+              },
+            ),
+            SizedBox(height: 16),
+            // Filtro de tipo
+            DropdownButtonFormField<String?>(
+              value: _selectedType,
+              decoration: InputDecoration(
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                labelText: 'Tipo de recordatorio',
+                prefixIcon: Icon(Icons.category, size: 20),
+              ),
+              items: [
+                DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Todos los tipos'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'Medicación',
+                  child: Text('Medicación'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'Actividad',
+                  child: Text('Actividad'),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() => _selectedType = value);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -389,7 +658,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           '${_stats['totalRecordatorios'] ?? 0} total',
         ),
         _buildMetricCard(
-          'Adherencia Promedio',
+          'Cumplimiento Promedio',
           '${_stats['adherenciaGeneral'] ?? 0}%',
           Icons.trending_up,
           Colors.green,
@@ -459,7 +728,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   Widget _buildTrendChart() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Adherencia (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
+      title: 'Evolución de Cumplimiento (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
     );
   }
 
@@ -478,7 +747,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Análisis de Adherencia',
+            'Análisis de Cumplimiento',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
@@ -491,12 +760,14 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           _buildAdherenceEvolution(),
           SizedBox(height: 20),
           
-          // Ranking de usuarios
-          _buildPatientRanking(),
-          SizedBox(height: 20),
-          
-          // Gráfico de barras de adherencia
-          AdherenceBarChart(patientStats: _patientStats),
+          // Ranking de usuarios - solo mostrar cuando NO hay usuario seleccionado
+          if (_selectedPatientId == null) ...[
+            _buildPatientRanking(),
+            SizedBox(height: 20),
+            
+            // Gráfico de barras de cumplimiento por usuario
+            AdherenceBarChart(patientStats: _patientStats),
+          ],
         ],
       ),
     );
@@ -523,7 +794,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                       color: Colors.green,
                     ),
                   ),
-                  Text('Adherencia General'),
+                  Text('Cumplimiento General'),
                 ],
               ),
             ),
@@ -561,7 +832,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   Widget _buildAdherenceEvolution() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Adherencia',
+      title: 'Evolución de Cumplimiento',
       primaryColor: Colors.green,
     );
   }
@@ -582,7 +853,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Ranking de Usuarios por Adherencia',
+              'Ranking de Usuarios por Cumplimiento',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             SizedBox(height: 16),
@@ -812,88 +1083,35 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           ),
           SizedBox(height: 16),
           
-          // Opciones de exportación
-          _buildExportOption(
-            'Reporte Completo PDF',
-            'Incluye todas las métricas, gráficos y análisis del período seleccionado',
-            Icons.picture_as_pdf,
-            Colors.red,
-            () => _exportCompletePDF(),
-          ),
-          
-          _buildExportOption(
-            'Datos Excel',
-            'Tabla con todos los recordatorios y estadísticas',
-            Icons.table_chart,
-            Colors.green,
-            () => _exportToExcel(),
-          ),
-          
-          _buildExportOption(
-            'Reporte por Paciente',
-            'Análisis individual de cada paciente',
-            Icons.person,
-            Colors.blue,
-            () => _exportPatientReports(),
-          ),
-          
-          _buildExportOption(
-            'Resumen Ejecutivo',
-            'Métricas clave y tendencias principales',
-            Icons.business,
-            Color(0xFF1E3A5F),
-            () => _exportExecutiveSummary(),
-          ),
-          
-          SizedBox(height: 20),
-          
-          // Opciones avanzadas
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Opciones Avanzadas',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  SizedBox(height: 16),
-                  
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          title: Text('Incluir gráficos'),
-                          value: _includeGraphs,
-                          onChanged: (value) {
-                            setState(() {
-                              _includeGraphs = value ?? true;
-                            });
-                          },
-                          dense: true,
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          title: Text('Datos detallados'),
-                          value: _includeDetails,
-                          onChanged: (value) {
-                            setState(() {
-                              _includeDetails = value ?? true;
-                            });
-                          },
-                          dense: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                ],
-              ),
+          // Opciones de exportación - condicionales según selección de usuario
+          if (_selectedPatientId == null) ...[
+            // Mostrar opciones para todos los usuarios
+            _buildExportOption(
+              'Reporte Completo PDF',
+              'Incluye todas las métricas, gráficos y análisis del período seleccionado',
+              Icons.picture_as_pdf,
+              Colors.red,
+              () { _exportCompletePDF(); },
             ),
-          ),
+            
+            _buildExportOption(
+              'Reporte por Usuario',
+              'Análisis individual de cada usuario',
+              Icons.person,
+              Colors.blue,
+              () => _exportPatientReports(),
+            ),
+          ] else ...[
+            // Solo mostrar opción de reporte individual para el usuario seleccionado
+            _buildExportOption(
+              'Reporte por Usuario',
+              'Análisis detallado de los recordatorios del usuario seleccionado',
+              Icons.person,
+              Colors.blue,
+              () => _exportSinglePatientPDF(),
+            ),
+          ],
+          
         ],
       ),
     );
@@ -944,11 +1162,14 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       
       // Filtro por tipo
       if (_selectedType != null) {
-        final matchesType = r.type.toLowerCase().contains(_selectedType!.toLowerCase()) ||
-                           (_selectedType == 'Medicación' && r.type.toLowerCase().contains('medic')) ||
-                           (_selectedType == 'Tarea' && r.type.toLowerCase().contains('tarea')) ||
-                           (_selectedType == 'Cita' && r.type.toLowerCase().contains('cita'));
-        if (!matchesType) return false;
+        if (_selectedType == 'Medicación') {
+           if (!r.type.toLowerCase().contains('medic') && r.type != 'Medicación') return false;
+        } else if (_selectedType == 'Actividad') {
+           final isActivity = r.type.toLowerCase().contains('activ') || r.type == 'Actividad' ||
+                              r.type.toLowerCase().contains('tarea') || r.type == 'Tarea' ||
+                              r.type.toLowerCase().contains('cita') || r.type == 'Cita';
+           if (!isActivity) return false;
+        }
       }
       
       return true;
@@ -990,7 +1211,6 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           _endDate = _startDate;
         }
       });
-      _loadReportData();
     }
   }
 
@@ -1018,7 +1238,6 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       setState(() {
         _endDate = date;
       });
-      _loadReportData();
     }
   }
 
@@ -1027,151 +1246,6 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       _endDate = DateTime.now();
       _startDate = _endDate.subtract(Duration(days: days));
     });
-    _loadReportData();
-  }
-
-  Widget _buildAdvancedFilters() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Filtros Avanzados',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            SizedBox(height: 12),
-            Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Paciente:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                          SizedBox(height: 4),
-                          DropdownButtonFormField<String?>(
-                            value: _selectedPatientId,
-                            decoration: InputDecoration(
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.grey[300]!),
-                              ),
-                              hintText: 'Todos',
-                              hintStyle: TextStyle(fontSize: 12),
-                            ),
-                            isExpanded: true,
-                            items: [
-                              DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text('Todos los pacientes', style: TextStyle(fontSize: 12)),
-                              ),
-                              ..._pacientes.map((patient) => DropdownMenuItem<String?>(
-                                value: patient.userId,
-                                child: Text(
-                                  patient.nombreCompleto.isEmpty 
-                                      ? 'Paciente ${_pacientes.indexOf(patient) + 1}' 
-                                      : patient.nombreCompleto,
-                                  style: TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              )),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedPatientId = value;
-                              });
-                              _loadReportData();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Tipo:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                          SizedBox(height: 4),
-                          DropdownButtonFormField<String?>(
-                            value: _selectedType,
-                            decoration: InputDecoration(
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.grey[300]!),
-                              ),
-                              hintText: 'Todos',
-                              hintStyle: TextStyle(fontSize: 12),
-                            ),
-                            isExpanded: true,
-                            items: [
-                              DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text('Todos', style: TextStyle(fontSize: 12)),
-                              ),
-                              DropdownMenuItem<String?>(
-                                value: 'Medicación',
-                                child: Text('Medicación', style: TextStyle(fontSize: 12)),
-                              ),
-                              DropdownMenuItem<String?>(
-                                value: 'Tarea',
-                                child: Text('Tareas', style: TextStyle(fontSize: 12)),
-                              ),
-                              DropdownMenuItem<String?>(
-                                value: 'Cita',
-                                child: Text('Citas', style: TextStyle(fontSize: 12)),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedType = value;
-                              });
-                              _loadReportData();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _selectedPatientId = null;
-                            _selectedType = null;
-                          });
-                          _loadReportData();
-                        },
-                        icon: Icon(Icons.clear, size: 16),
-                        label: Text('Limpiar Filtros', style: TextStyle(fontSize: 12)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[100],
-                          foregroundColor: Colors.grey[700],
-                          elevation: 0,
-                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _showPatientDetails(UserModel paciente) {
@@ -1231,6 +1305,95 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'paciente'} generado y compartido exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando reporte: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportSinglePatientPDF() async {
+    if (_selectedPatientId == null) return;
+    
+    try {
+      // Encontrar el paciente seleccionado
+      final paciente = _pacientes.firstWhere(
+        (p) => p.userId == _selectedPatientId,
+        orElse: () => throw Exception('Usuario no encontrado'),
+      );
+
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando reporte detallado del usuario...'),
+              SizedBox(height: 8),
+              Text(
+                'Calculando estadísticas por recordatorio...',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Filtrar recordatorios del paciente
+      final patientReminders = _reminders.where((r) => r.userId == _selectedPatientId).toList();
+
+      // Calcular estadísticas por recordatorio
+      final reminderService = ReminderServiceNew();
+      final Map<String, Map<String, int>> perReminderStats = {};
+      
+      for (final reminder in patientReminders) {
+        try {
+          final stats = await reminderService.getReminderStats(reminder.id);
+          perReminderStats[reminder.id] = {
+            'total': stats['total'] as int,
+            'completed': stats['confirmed'] as int, // Confirmed = Completed
+            'pending': stats['pending'] as int, // Add pending
+            'missed': stats['missed'] as int,
+            'paused': stats['paused'] as int,
+          };
+        } catch (e) {
+          print('Error obteniendo stats para ${reminder.title}: $e');
+          // Si falla para un recordatorio, usar valores en 0
+          perReminderStats[reminder.id] = {
+            'total': 0,
+            'completed': 0,
+            'pending': 0,
+            'missed': 0,
+            'paused': reminder.isPaused ? 1 : 0,
+          };
+        }
+      }
+
+      await ExportUtils.generateCuidadorPatientPDF(
+        paciente: paciente,
+        patientReminders: patientReminders,
+        startDate: _startDate,
+        endDate: _endDate,
+        stats: _stats,
+        perReminderStats: perReminderStats, // Pass the calculated stats
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'usuario'} generado exitosamente'),
           backgroundColor: Colors.green,
         ),
       );

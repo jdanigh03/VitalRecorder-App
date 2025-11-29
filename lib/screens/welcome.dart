@@ -1208,7 +1208,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                       Text(
                         isConnected 
                             ? '${device!.name} • Lista para notificaciones'
-                            : 'Conecta tu manilla ESP32-C3 para recordatorios LED',
+                            : 'Conecta tu manilla Vital Recorder para recordatorios',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 12,

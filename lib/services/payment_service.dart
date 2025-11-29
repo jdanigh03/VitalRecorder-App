@@ -9,7 +9,13 @@ class PaymentService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<Uri?> solicitarCupoAdicional({double? amount, double? discount, List<Map<String, dynamic>>? lines, String? description}) async {
+  Future<Uri?> solicitarCupoAdicional({
+    double? amount, 
+    double? discount, 
+    List<Map<String, dynamic>>? lines, 
+    String? description,
+    String? planId, // Add planId to track subscription purchases
+  }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     if (paymentsApiBaseUrl.isEmpty) {
@@ -26,6 +32,7 @@ class PaymentService {
 
     if (amount != null) requestData['amount'] = amount;
     if (discount != null) requestData['discount'] = discount;
+    if (planId != null) requestData['planId'] = planId; // Send planId to server
     
     if (lines != null) {
       final mappedLines = lines.map((l) => {
@@ -46,7 +53,7 @@ class PaymentService {
     final body = jsonEncode(requestData);
 
     print('DEBUG: ----------------------------------------');
-    print('DEBUG: PAYMENT REQUEST BODY (VERSION 3):');
+    print('DEBUG: PAYMENT REQUEST BODY (VERSION 4 - With PlanID):');
     print(const JsonEncoder.withIndent('  ').convert(requestData));
     print('DEBUG: ----------------------------------------');
 

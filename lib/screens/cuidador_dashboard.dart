@@ -23,6 +23,7 @@ import 'ajustes.dart';
 import 'auth_wrapper.dart';
 import '../widgets/global_reminder_indicator.dart';
 import 'detalle_recordatorio_new.dart'; // Importar detalle
+import 'cuidador_calendario_screen.dart';
 
 class CuidadorDashboard extends StatefulWidget {
   const CuidadorDashboard({Key? key}) : super(key: key);
@@ -910,6 +911,21 @@ class _CuidadorDashboardState extends State<CuidadorDashboard> with WidgetsBindi
                               },
                               icon: Icon(Icons.people, size: 18),
                               label: Text('Usuarios'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Color(0xFF4A90E2),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const CuidadorCalendarioScreen(),
+                                  ),
+                                );
+                              },
+                              icon: Icon(Icons.calendar_month, size: 18),
+                              label: Text('Calendario'),
                               style: TextButton.styleFrom(
                                 foregroundColor: Color(0xFF4A90E2),
                               ),

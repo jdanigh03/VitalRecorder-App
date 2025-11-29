@@ -199,7 +199,7 @@ class _CuidadorAdherenciaScreenState extends State<CuidadorAdherenciaScreen> {
         children: [
           // Título
           Text(
-            'Adherencia General',
+            'Cumplimiento General',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 16,

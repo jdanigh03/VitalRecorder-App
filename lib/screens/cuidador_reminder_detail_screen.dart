@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/reminder_new.dart';
+import '../models/reminder_confirmation.dart';
 import '../services/cuidador_service.dart';
+import '../reminder_service_new.dart';
 
 class CuidadorReminderDetailScreen extends StatefulWidget {
   final ReminderNew reminder;
   final dynamic paciente; // Puede ser UserModel o null
+  final DateTime? initialDate;
 
-  const CuidadorReminderDetailScreen({Key? key, required this.reminder, this.paciente}) : super(key: key);
+  const CuidadorReminderDetailScreen({
+    Key? key, 
+    required this.reminder, 
+    this.paciente,
+    this.initialDate,
+  }) : super(key: key);
 
   @override
   State<CuidadorReminderDetailScreen> createState() => _CuidadorReminderDetailScreenState();
@@ -15,8 +23,12 @@ class CuidadorReminderDetailScreen extends StatefulWidget {
 
 class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScreen> {
   final CuidadorService _cuidadorService = CuidadorService();
+  final ReminderServiceNew _reminderService = ReminderServiceNew();
   late ReminderNew _currentReminder;
   bool _isLoading = false;
+  List<ReminderConfirmation> _confirmations = [];
+  List<ReminderConfirmation> _filteredConfirmations = [];
+  bool _showAllHistory = false;
 
   // Formatters
   final DateFormat _timeFormatter = DateFormat('HH:mm');
@@ -26,6 +38,33 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
   void initState() {
     super.initState();
     _currentReminder = widget.reminder;
+    _showAllHistory = widget.initialDate == null;
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      _confirmations = await _reminderService.getConfirmations(_currentReminder.id);
+      _filterConfirmations();
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print('Error loading confirmations: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _filterConfirmations() {
+    if (_showAllHistory || widget.initialDate == null) {
+      _filteredConfirmations = List.from(_confirmations);
+    } else {
+      _filteredConfirmations = _confirmations.where((c) {
+        return c.scheduledTime.year == widget.initialDate!.year &&
+            c.scheduledTime.month == widget.initialDate!.month &&
+            c.scheduledTime.day == widget.initialDate!.day;
+      }).toList();
+    }
+    _filteredConfirmations.sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
   }
 
   @override
@@ -151,6 +190,8 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
                   _buildInfoCard('Tipo', _getTypeText(_currentReminder.type), _getTypeIcon(_currentReminder.type), const Color(0xFF27AE60)),
                   const SizedBox(height: 12),
                   _buildInfoCard('Estado', _getStatusText(_currentReminder), _getStatusIcon(_currentReminder), _getStatusColor(_currentReminder)),
+                  const SizedBox(height: 24),
+                  _buildConfirmationsSection(),
                 ],
               ),
             ),
@@ -351,6 +392,173 @@ class _CuidadorReminderDetailScreenState extends State<CuidadorReminderDetailScr
           ],
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text('Entendido'))],
+      ),
+    );
+  }
+  Widget _buildConfirmationsSection() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_confirmations.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.check_circle_outline, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 8),
+              Text(
+                'No hay confirmaciones registradas',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Text(
+                'Historial de Confirmaciones',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A5F),
+                ),
+              ),
+            ),
+            if (!_showAllHistory && widget.initialDate != null)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _showAllHistory = true;
+                    _filterConfirmations();
+                  });
+                },
+                child: const Text('Ver todo'), // Shortened text
+              ),
+          ],
+        ),
+        if (!_showAllHistory && widget.initialDate != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Mostrando solo: ${_dayFormatter.format(widget.initialDate!)}',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        const SizedBox(height: 12),
+        if (_filteredConfirmations.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                'No hay confirmaciones para esta fecha',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+          )
+        else
+          ..._filteredConfirmations.map((confirmation) => _buildConfirmationCard(confirmation)),
+      ],
+    );
+  }
+
+  Widget _buildConfirmationCard(ReminderConfirmation confirmation) {
+    Color statusColor;
+    IconData statusIcon;
+    
+    switch (confirmation.status) {
+      case ConfirmationStatus.CONFIRMED:
+        statusColor = Colors.green;
+        statusIcon = Icons.check_circle;
+        break;
+      case ConfirmationStatus.MISSED:
+        statusColor = Colors.red;
+        statusIcon = Icons.cancel;
+        break;
+      case ConfirmationStatus.PENDING:
+        statusColor = Colors.orange;
+        statusIcon = Icons.pending;
+        break;
+      case ConfirmationStatus.PAUSED:
+        statusColor = Colors.grey;
+        statusIcon = Icons.pause_circle;
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.3), width: 2),
+      ),
+      child: Row(
+        children: [
+          Icon(statusIcon, color: statusColor, size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _dayFormatter.format(confirmation.scheduledTime),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  _timeFormatter.format(confirmation.scheduledTime),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1E3A5F),
+                  ),
+                ),
+                if (confirmation.notes != null && confirmation.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    confirmation.notes!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Text(
+            confirmation.status.displayName,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: statusColor,
+            ),
+          ),
+        ],
       ),
     );
   }
