@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../widgets/dashboard_widgets.dart';
 import '../widgets/chart_widgets.dart';
 import '../utils/export_utils.dart';
+import '../reminder_service_new.dart';
 import 'cuidador_recordatorios_paciente_detalle.dart';
 
 class CuidadorReportesScreen extends StatefulWidget {
@@ -38,12 +39,30 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   DateTime _startDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _endDate = DateTime.now();
   bool _reportGenerated = false;
+  bool _hasInitializedController = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _updateTabController();
     _loadPatients();
+  }
+
+  void _updateTabController() {
+    final newLength = _selectedPatientId == null ? 4 : 3;
+    // Check if controller needs to be created or updated
+    if (!_hasInitializedController) {
+      _tabController = TabController(length: newLength, vsync: this);
+      _hasInitializedController = true;
+    } else if (_tabController.length != newLength) {
+      final oldIndex = _tabController.index;
+      _tabController.dispose();
+      _tabController = TabController(length: newLength, vsync: this);
+      // Try to preserve the selected tab, but cap at new length
+      if (oldIndex < newLength) {
+        _tabController.index = oldIndex;
+      }
+    }
   }
 
   Future<void> _loadPatients() async {
@@ -112,6 +131,11 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       
       // Filtrar recordatorios por período y filtros avanzados
       final filteredReminders = reminders.where((r) {
+        // Excluir recordatorios inactivos/archivados
+        if (!r.isActive) {
+          return false;
+        }
+        
         // Filtro por período (usar startDate del recordatorio)
         if (!r.startDate.isAfter(_startDate.subtract(Duration(seconds: 1))) ||
             !r.startDate.isBefore(_endDate.add(Duration(days: 1)))) {
@@ -181,12 +205,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
               indicatorColor: Colors.white,
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white70,
-              tabs: [
-                Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
-                Tab(text: 'Adherencia', icon: Icon(Icons.trending_up, size: 16)),
-                Tab(text: 'Por Usuario', icon: Icon(Icons.person, size: 16)),
-                Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
-              ],
+              tabs: _buildTabs(),
             )
           : null,
         actions: [
@@ -224,6 +243,19 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   }
 
   Widget _buildTabContent() {
+    // If single patient selected, exclude "Por Usuario" tab
+    if (_selectedPatientId != null) {
+      return TabBarView(
+        controller: _tabController,
+        children: [
+          _buildResumenTab(),
+          _buildAdherenciaTab(),
+          _buildExportarTab(),
+        ],
+      );
+    }
+    
+    // All patients - show all tabs
     return TabBarView(
       controller: _tabController,
       children: [
@@ -233,6 +265,25 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         _buildExportarTab(),
       ],
     );
+  }
+
+  List<Widget> _buildTabs() {
+    // If single patient selected, exclude "Por Usuario" tab
+    if (_selectedPatientId != null) {
+      return [
+        Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
+        Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
+        Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
+      ];
+    }
+    
+    // All patients - show all tabs
+    return [
+      Tab(text: 'Resumen', icon: Icon(Icons.dashboard, size: 16)),
+      Tab(text: 'Cumplimiento', icon: Icon(Icons.trending_up, size: 16)),
+      Tab(text: 'Por Usuario', icon: Icon(Icons.person, size: 16)),
+      Tab(text: 'Exportar', icon: Icon(Icons.file_download, size: 16)),
+    ];
   }
 
 
@@ -529,13 +580,13 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
               decoration: InputDecoration(
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                labelText: 'Filtrar por Paciente',
+                labelText: 'Filtrar por Usuario',
                 prefixIcon: Icon(Icons.person, size: 20),
               ),
               items: [
                 DropdownMenuItem<String?>(
                   value: null,
-                  child: Text('Todos los pacientes'),
+                  child: Text('Todos los usuarios'),
                 ),
                 ..._pacientes.map((p) => DropdownMenuItem<String?>(
                   value: p.userId,
@@ -543,7 +594,10 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                 )),
               ],
               onChanged: (value) {
-                setState(() => _selectedPatientId = value);
+                setState(() {
+                  _selectedPatientId = value;
+                  _updateTabController();
+                });
               },
             ),
             SizedBox(height: 16),
@@ -604,7 +658,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           '${_stats['totalRecordatorios'] ?? 0} total',
         ),
         _buildMetricCard(
-          'Adherencia Promedio',
+          'Cumplimiento Promedio',
           '${_stats['adherenciaGeneral'] ?? 0}%',
           Icons.trending_up,
           Colors.green,
@@ -674,7 +728,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   Widget _buildTrendChart() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Adherencia (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
+      title: 'Evolución de Cumplimiento (${DateFormat('dd/MM').format(_startDate)} - ${DateFormat('dd/MM').format(_endDate)})',
     );
   }
 
@@ -693,7 +747,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Análisis de Adherencia',
+            'Análisis de Cumplimiento',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 16),
@@ -706,12 +760,14 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           _buildAdherenceEvolution(),
           SizedBox(height: 20),
           
-          // Ranking de usuarios
-          _buildPatientRanking(),
-          SizedBox(height: 20),
-          
-          // Gráfico de barras de adherencia
-          AdherenceBarChart(patientStats: _patientStats),
+          // Ranking de usuarios - solo mostrar cuando NO hay usuario seleccionado
+          if (_selectedPatientId == null) ...[
+            _buildPatientRanking(),
+            SizedBox(height: 20),
+            
+            // Gráfico de barras de cumplimiento por usuario
+            AdherenceBarChart(patientStats: _patientStats),
+          ],
         ],
       ),
     );
@@ -738,7 +794,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
                       color: Colors.green,
                     ),
                   ),
-                  Text('Adherencia General'),
+                  Text('Cumplimiento General'),
                 ],
               ),
             ),
@@ -776,7 +832,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
   Widget _buildAdherenceEvolution() {
     return TrendChart(
       trendData: _trendData,
-      title: 'Evolución de Adherencia',
+      title: 'Evolución de Cumplimiento',
       primaryColor: Colors.green,
     );
   }
@@ -797,7 +853,7 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Ranking de Usuarios por Adherencia',
+              'Ranking de Usuarios por Cumplimiento',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             SizedBox(height: 16),
@@ -1027,88 +1083,35 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
           ),
           SizedBox(height: 16),
           
-          // Opciones de exportación
-          _buildExportOption(
-            'Reporte Completo PDF',
-            'Incluye todas las métricas, gráficos y análisis del período seleccionado',
-            Icons.picture_as_pdf,
-            Colors.red,
-            () { _exportCompletePDF(); },
-          ),
-          
-          _buildExportOption(
-            'Datos Excel',
-            'Tabla con todos los recordatorios y estadísticas',
-            Icons.table_chart,
-            Colors.green,
-            () { _exportToExcel(); },
-          ),
-          
-          _buildExportOption(
-            'Reporte por Paciente',
-            'Análisis individual de cada paciente',
-            Icons.person,
-            Colors.blue,
-            () => _exportPatientReports(),
-          ),
-          
-          _buildExportOption(
-            'Resumen Ejecutivo',
-            'Métricas clave y tendencias principales',
-            Icons.business,
-            Color(0xFF1E3A5F),
-            () => _exportExecutiveSummary(),
-          ),
-          
-          SizedBox(height: 20),
-          
-          // Opciones avanzadas
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Opciones Avanzadas',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  SizedBox(height: 16),
-                  
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          title: Text('Incluir gráficos'),
-                          value: _includeGraphs,
-                          onChanged: (value) {
-                            setState(() {
-                              _includeGraphs = value ?? true;
-                            });
-                          },
-                          dense: true,
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          title: Text('Datos detallados'),
-                          value: _includeDetails,
-                          onChanged: (value) {
-                            setState(() {
-                              _includeDetails = value ?? true;
-                            });
-                          },
-                          dense: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                ],
-              ),
+          // Opciones de exportación - condicionales según selección de usuario
+          if (_selectedPatientId == null) ...[
+            // Mostrar opciones para todos los usuarios
+            _buildExportOption(
+              'Reporte Completo PDF',
+              'Incluye todas las métricas, gráficos y análisis del período seleccionado',
+              Icons.picture_as_pdf,
+              Colors.red,
+              () { _exportCompletePDF(); },
             ),
-          ),
+            
+            _buildExportOption(
+              'Reporte por Usuario',
+              'Análisis individual de cada usuario',
+              Icons.person,
+              Colors.blue,
+              () => _exportPatientReports(),
+            ),
+          ] else ...[
+            // Solo mostrar opción de reporte individual para el usuario seleccionado
+            _buildExportOption(
+              'Reporte por Usuario',
+              'Análisis detallado de los recordatorios del usuario seleccionado',
+              Icons.person,
+              Colors.blue,
+              () => _exportSinglePatientPDF(),
+            ),
+          ],
+          
         ],
       ),
     );
@@ -1302,6 +1305,95 @@ class _CuidadorReportesScreenState extends State<CuidadorReportesScreen> with Ti
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'paciente'} generado y compartido exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generando reporte: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportSinglePatientPDF() async {
+    if (_selectedPatientId == null) return;
+    
+    try {
+      // Encontrar el paciente seleccionado
+      final paciente = _pacientes.firstWhere(
+        (p) => p.userId == _selectedPatientId,
+        orElse: () => throw Exception('Usuario no encontrado'),
+      );
+
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando reporte detallado del usuario...'),
+              SizedBox(height: 8),
+              Text(
+                'Calculando estadísticas por recordatorio...',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Filtrar recordatorios del paciente
+      final patientReminders = _reminders.where((r) => r.userId == _selectedPatientId).toList();
+
+      // Calcular estadísticas por recordatorio
+      final reminderService = ReminderServiceNew();
+      final Map<String, Map<String, int>> perReminderStats = {};
+      
+      for (final reminder in patientReminders) {
+        try {
+          final stats = await reminderService.getReminderStats(reminder.id);
+          perReminderStats[reminder.id] = {
+            'total': stats['total'] as int,
+            'completed': stats['confirmed'] as int, // Confirmed = Completed
+            'pending': stats['pending'] as int, // Add pending
+            'missed': stats['missed'] as int,
+            'paused': stats['paused'] as int,
+          };
+        } catch (e) {
+          print('Error obteniendo stats para ${reminder.title}: $e');
+          // Si falla para un recordatorio, usar valores en 0
+          perReminderStats[reminder.id] = {
+            'total': 0,
+            'completed': 0,
+            'pending': 0,
+            'missed': 0,
+            'paused': reminder.isPaused ? 1 : 0,
+          };
+        }
+      }
+
+      await ExportUtils.generateCuidadorPatientPDF(
+        paciente: paciente,
+        patientReminders: patientReminders,
+        startDate: _startDate,
+        endDate: _endDate,
+        stats: _stats,
+        perReminderStats: perReminderStats, // Pass the calculated stats
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reporte de ${paciente.nombreCompleto.isNotEmpty ? paciente.nombreCompleto : 'usuario'} generado exitosamente'),
           backgroundColor: Colors.green,
         ),
       );

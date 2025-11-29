@@ -27,6 +27,7 @@ class AnalyticsService with CacheableMixin {
       operation: 'calculateRealStats',
       startDate: startDate,
       endDate: endDate,
+      patientId: patientId,
     );
 
     return await withCache(cacheKey, () async {
@@ -37,6 +38,9 @@ class AnalyticsService with CacheableMixin {
         reminders = reminders.where((r) => r.userId == patientId).toList();
         patients = patients.where((p) => p.userId == patientId).toList();
       }
+
+      // IMPORTANTE: Filtrar recordatorios inactivos/archivados para las estadísticas
+      reminders = reminders.where((r) => r.isActive).toList();
 
       // Obtener todas las confirmaciones del rango
       final confirmations = await _reminderService.getConfirmationsForRange(

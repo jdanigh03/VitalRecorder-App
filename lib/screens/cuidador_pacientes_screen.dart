@@ -812,7 +812,7 @@ class _CuidadorPacientesScreenState extends State<CuidadorPacientesScreen> {
                       ),
                       SizedBox(width: 8),
                       Text(
-                        'Adherencia: ${stats['adherencia']}%',
+                        'Cumplimiento: ${stats['adherencia']}%',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

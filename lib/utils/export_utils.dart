@@ -77,7 +77,7 @@ class ExportUtils {
       final file = File("${output.path}/$fileName");
       await file.writeAsBytes(await pdf.save());
 
-      await Share.shareXFiles([XFile(file.path)], text: 'Reporte de Adherencia');
+      await Share.shareXFiles([XFile(file.path)], text: 'Reporte de Cumplimiento');
       
     } catch (e) {
       throw Exception('Error generando PDF: $e');
@@ -302,19 +302,7 @@ class ExportUtils {
     );
   }
 
-  /// Construye una celda de tabla
-  static pw.Widget _buildTableCell(String text, {bool isHeader = false}) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(8),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontSize: isHeader ? 12 : 10,
-          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
+
 
   /// Construye la sección de notas explicativas
   static pw.Widget _buildNotesSection() {
@@ -474,13 +462,14 @@ class ExportUtils {
     }
   }
 
-  /// Genera reporte PDF específico de un paciente para el cuidador
+  /// Genera reporte PDF específico de un usuario para el cuidador
   static Future<void> generateCuidadorPatientPDF({
     required UserModel paciente,
     required List<ReminderNew> patientReminders,
     required DateTime startDate,
     required DateTime endDate,
     required Map<String, dynamic> stats,
+    Map<String, Map<String, int>>? perReminderStats, // NEW: optional per-reminder statistics
   }) async {
     try {
       final pdf = pw.Document();
@@ -491,30 +480,32 @@ class ExportUtils {
         'completed': stats['completed'] ?? stats['completados'] ?? 0,
         'missed': stats['missed'] ?? stats['vencidos'] ?? 0,
         'pending': stats['pending'] ?? stats['pendientes'] ?? 0,
-        'adherenceRate': stats['adherenceRate'] ?? stats['adherenciaGeneral'] ?? 0,
+        'adherenceRate': stats['adherenceRate'] ?? stats['adherenciaGeneral'] ?? stats['cumplimiento'] ?? 0,
       };
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
+          margin: const pw.EdgeInsets.all(24), // Reduced margin for more space
           build: (pw.Context context) {
             return [
-              // Encabezado específico del paciente
+              // Encabezado específico del usuario
               _buildPatientHeader(paciente, startDate, endDate),
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 16),
               
-              // Estadísticas del paciente
+              // Estadísticas generales del usuario
               _buildStatisticsSection(normalizedStats),
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 16),
               
-              // Tabla de recordatorios del paciente
-              _buildRemindersTable(patientReminders),
-              pw.SizedBox(height: 20),
+              // NUEVA TABLA: Estadísticas por recordatorio
+              if (perReminderStats != null && perReminderStats.isNotEmpty) ...[
+                _buildPerReminderStatsTable(patientReminders, perReminderStats),
+                pw.SizedBox(height: 16),
+              ],
               
-              // Análisis de adherencia específico
-              _buildPatientAdherenceAnalysis(normalizedStats),
-              pw.SizedBox(height: 20),
+              // Análisis de cumplimiento específico
+              _buildPatientComplianceAnalysis(normalizedStats),
+              pw.SizedBox(height: 12),
               
               // Notas explicativas
               _buildNotesSection(),
@@ -526,7 +517,7 @@ class ExportUtils {
               margin: const pw.EdgeInsets.only(top: 1.0 * PdfPageFormat.cm),
               child: pw.Text(
                 'VitalRecorder - Reporte Usuario - Página ${context.pageNumber} de ${context.pagesCount}',
-                style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
               ),
             );
           },
@@ -542,7 +533,7 @@ class ExportUtils {
       await Share.shareXFiles([XFile(file.path)], text: 'Reporte de $patientName');
       
     } catch (e) {
-      throw Exception('Error generando reporte del paciente: $e');
+      throw Exception('Error generando reporte del usuario: $e');
     }
   }
 
@@ -612,7 +603,7 @@ class ExportUtils {
       // Agregar hoja de estadísticas por paciente
       csvData.add([]); // Línea vacía
       csvData.add(['=== ESTADÍSTICAS POR USUARIO ===']);
-      csvData.add(['Usuario', 'Email', 'Total', 'Completados', 'Omitidos', 'Pendientes', 'Adherencia (%)']);
+      csvData.add(['Usuario', 'Email', 'Total', 'Completados', 'Omitidos', 'Pendientes', 'Cumplimiento (%)']);
 
       for (final paciente in pacientes) {
         // Buscar stats del paciente
@@ -852,7 +843,7 @@ class ExportUtils {
             mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
             children: [
               _buildStatCard('Pacientes', '${stats['totalPacientes'] ?? 0}', PdfColors.blue),
-              _buildStatCard('Adherencia Promedio', '${stats['adherenciaGeneral'] ?? 0}%', PdfColors.green),
+              _buildStatCard('Cumplimiento Promedio', '${stats['adherenciaGeneral'] ?? 0}%', PdfColors.green),
               _buildStatCard('Recordatorios Activos', '${stats['recordatoriosActivos'] ?? 0}', PdfColors.orange),
               _buildStatCard('Alertas Críticas', '${stats['alertasHoy'] ?? 0}', PdfColors.red),
             ],
@@ -895,7 +886,7 @@ class ExportUtils {
                 _buildTableCell('Total', isHeader: true),
                 _buildTableCell('Completados', isHeader: true),
                 _buildTableCell('Omitidos', isHeader: true),
-                _buildTableCell('Adherencia', isHeader: true),
+                _buildTableCell('Cumplimiento', isHeader: true),
               ],
             ),
             // Data rows
@@ -993,7 +984,7 @@ class ExportUtils {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
             children: [
-              _buildGraphPlaceholder('Tendencia\nde Adherencia', PdfColors.green),
+              _buildGraphPlaceholder('Tendencia\nde Cumplimiento', PdfColors.green),
               _buildGraphPlaceholder('Distribución\npor Tipos', PdfColors.blue),
               _buildGraphPlaceholder('Ranking de\nPacientes', PdfColors.orange),
             ],
@@ -1371,6 +1362,193 @@ class ExportUtils {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: _getTopPatientsWidgets(pacientes),
+      ),
+    );
+  }
+
+  /// NUEVO: Construye tabla detallada de estadísticas por recordatorio
+  static pw.Widget _buildPerReminderStatsTable(
+    List<ReminderNew> reminders,
+    Map<String, Map<String, int>> perReminderStats,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'ESTADÍSTICAS POR RECORDATORIO',
+          style: pw.TextStyle(
+            fontSize: 16,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.black,
+          ),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(3), // Recordatorio
+            1: const pw.FixedColumnWidth(40), // Total
+            2: const pw.FixedColumnWidth(50), // Completados
+            3: const pw.FixedColumnWidth(45), // Pendiente
+            4: const pw.FixedColumnWidth(45), // Omitidos
+            5: const pw.FixedColumnWidth(45), // Pausado
+            6: const pw.FixedColumnWidth(50), // % Cumplimiento
+          },
+          children: [
+            // Header
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: PdfColors.blue100),
+              children: [
+                _buildTableCell('Recordatorio', isHeader: true),
+                _buildTableCell('Total', isHeader: true),
+                _buildTableCell('Completados', isHeader: true),
+                _buildTableCell('Pendiente', isHeader: true),
+                _buildTableCell('Omitidos', isHeader: true),
+                _buildTableCell('Pausado', isHeader: true),
+                _buildTableCell('% Cumpl.', isHeader: true),
+              ],
+            ),
+            // Data rows
+            ...reminders.map((reminder) {
+              final stats = perReminderStats[reminder.id] ?? {
+                'total': 0,
+                'completed': 0,
+                'missed': 0,
+                'pending': 0,
+                'paused': reminder.isPaused ? 1 : 0,
+              };
+              
+              final total = stats['total'] ?? 0;
+              final completed = stats['completed'] ?? 0;
+              final pending = stats['pending'] ?? 0;
+              final missed = stats['missed'] ?? 0;
+              final paused = stats['paused'] ?? 0;
+              final compliance = total > 0 ? ((completed / total) * 100).round() : 0;
+              
+              // Color for text only, no backgrounds
+              final complianceColor = compliance >= 80 
+                  ? PdfColors.green800
+                  : compliance >= 50 
+                      ? PdfColors.orange900
+                      : PdfColors.grey800;
+              
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(reminder.title, fontSize: 9),
+                  _buildTableCell('$total', fontSize: 9),
+                  _buildTableCell('$completed', fontSize: 9, color: PdfColors.green800),
+                  _buildTableCell('$pending', fontSize: 9, color: PdfColors.blue800),
+                  _buildTableCell('$missed', fontSize: 9, color: PdfColors.grey800),
+                  _buildTableCell(paused > 0 ? 'Sí' : 'No', fontSize: 9),
+                  _buildTableCell('$compliance%', fontSize: 9, color: complianceColor),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// NUEVO: Construye análisis de cumplimiento del usuario (reemplaza adherencia)
+  static pw.Widget _buildPatientComplianceAnalysis(Map<String, dynamic> stats) {
+    final adherenceRate = stats['adherenceRate'] as int;
+    final total = stats['total'] as int;
+    final completed = stats['completed'] as int;
+    
+    String evaluacion;
+    PdfColor evaluacionColor;
+    PdfColor backgroundColor;
+    
+    if (adherenceRate >= 90) {
+      evaluacion = 'EXCELENTE';
+      evaluacionColor = PdfColors.green800;
+      backgroundColor = PdfColors.green50;
+    } else if (adherenceRate >= 75) {
+      evaluacion = 'BUENO';
+      evaluacionColor = PdfColors.blue800;
+      backgroundColor = PdfColors.blue50;
+    } else if (adherenceRate >= 50) {
+      evaluacion = 'REGULAR';
+      evaluacionColor = PdfColors.orange800;
+      backgroundColor = PdfColors.orange50;
+    } else {
+      evaluacion = 'NECESITA MEJORAR';
+      evaluacionColor = PdfColors.grey800;
+      backgroundColor = PdfColors.grey100;
+    }
+    
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: backgroundColor,
+        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: evaluacionColor, width: 1.5),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                'EVALUACIÓN DE CUMPLIMIENTO',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: evaluacionColor,
+                ),
+              ),
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: pw.BoxDecoration(
+                  color: evaluacionColor,
+                  borderRadius: pw.BorderRadius.circular(12),
+                ),
+                child: pw.Text(
+                  evaluacion,
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            '- Tasa de cumplimiento general: $adherenceRate%',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey900),
+          ),
+          pw.Text(
+            '- Recordatorios completados: $completed de $total',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey900),
+          ),
+          if (adherenceRate < 75) ...[
+            pw.SizedBox(height: 6),
+            pw.Text(
+              '* Recomendación: Revisar los recordatorios con menor cumplimiento y ajustar horarios si es necesario.',
+              style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800, fontStyle: pw.FontStyle.italic),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Helper method to build table cell with optional color
+  static pw.Widget _buildTableCell(String text, {bool isHeader = false, double fontSize = 10, PdfColor? color}) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isHeader ? 10 : fontSize,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: color ?? PdfColors.black,
+        ),
+        textAlign: isHeader ? pw.TextAlign.center : pw.TextAlign.left,
       ),
     );
   }

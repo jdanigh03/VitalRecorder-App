@@ -439,7 +439,7 @@ class PatientInfoCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _buildInfoChip(
-                    'Adherencia',
+                    'Cumplimiento',
                     '$adherence%',
                     getAdherenceColor(),
                   ),
